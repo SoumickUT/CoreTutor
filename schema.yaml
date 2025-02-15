@@ -1,0 +1,129 @@
+openapi: 3.0.0
+info:
+  title: Course API
+  version: '1.0'
+paths:
+  /api/courses/:
+    post:
+      tags:
+        - Courses
+      summary: Create a new course
+      description: Creates a new course with variants and variant items
+      operationId: createCourse
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: Course title
+                description:
+                  type: string
+                  description: Course description
+                price:
+                  type: number
+                  format: float
+                  description: Course price
+                language:
+                  type: string
+                  description: Course language
+                level:
+                  type: string
+                  description: Course difficulty level
+                category:
+                  type: integer
+                  description: Category ID
+                teacher:
+                  type: integer
+                  description: Teacher ID
+                platform_status:
+                  type: boolean
+                  default: false
+                teacher_course_status:
+                  type: boolean
+                  default: false
+                featured:
+                  type: boolean
+                  default: false
+                file:
+                  type: string
+                  format: binary
+                  description: Course file
+                image:
+                  type: string
+                  format: binary
+                  description: Course image
+                # Dynamic variant fields
+                'variants[0][variant_title]':
+                  type: string
+                  description: Title for the first variant
+                'variants[0][items][0][title]':
+                  type: string
+                  description: Title for the first item in first variant
+                'variants[0][items][0][description]':
+                  type: string
+                  description: Description for the first item in first variant
+                'variants[0][items][0][file]':
+                  type: string
+                  format: binary
+                  description: File for the first item in first variant
+                'variants[0][items][0][preview]':
+                  type: boolean
+                  description: Preview status for the first item in first variant
+              required:
+                - title
+                - description
+                - price
+                - category
+                - teacher
+      responses:
+        '201':
+          description: Course created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  price:
+                    type: number
+                  curriculum:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Variant'
+        '400':
+          description: Bad request
+components:
+  schemas:
+    Variant:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VariantItem'
+    VariantItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        preview:
+          type: boolean
+        file:
+          type: string
