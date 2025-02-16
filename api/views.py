@@ -7,7 +7,7 @@ from django.db import models
 from django.db.models.functions import ExtractMonth
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.http import Http404
-
+from rest_framework.permissions import IsAuthenticated
 from api import serializer as api_serializer
 from api import models as api_models
 from userauths.models import User, Profile
@@ -1534,3 +1534,7 @@ class TeacherDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class UserListView(generics.ListAPIView):
+    queryset = User.objects.all()
+    serializer_class = api_serializer.UserSerializer
+    permission_classes = [IsAuthenticated]

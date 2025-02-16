@@ -14,6 +14,7 @@ urlpatterns = [
     path("user/password-change/", api_views.PasswordChangeAPIView.as_view()),
     path("user/profile/<user_id>/", api_views.ProfileAPIView.as_view()),
     path("user/change-password/", api_views.ChangePasswordAPIView.as_view()),
+    path('user/users-list/', api_views.UserListView.as_view(), name='user-list'),
 
     # Core Endpoints
     path("course/category/", api_views.CategoryListAPIView.as_view()),
