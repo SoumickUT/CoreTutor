@@ -1,11 +1,10 @@
 from django.db import models
 from django.utils.text import slugify
 from django.utils import timezone
-
+from moviepy import VideoFileClip
 
 from userauths.models import User, Profile
 from shortuuid.django_fields import ShortUUIDField
-from moviepy.editor import VideoFileClip
 import math
 
 LANGUAGE = (
