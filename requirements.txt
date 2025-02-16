@@ -45,3 +45,4 @@ mssql-django
 django-mssql-backend
 pyodbc #pip install --upgrade sql_server.pyodbc
 drf-spectacular
+whitenoise
