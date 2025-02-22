@@ -8,6 +8,7 @@ from django.db.models.functions import ExtractMonth
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.http import Http404
 from rest_framework.permissions import IsAuthenticated
+
 from api import serializer as api_serializer
 from api import models as api_models
 from userauths.models import User, Profile
@@ -22,12 +23,14 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView  # Import APIView
 from drf_yasg.utils import swagger_auto_schema
 import random
+from drf_yasg import openapi
 from decimal import Decimal
 import stripe
 import requests
 from datetime import datetime, timedelta
 from distutils.util import strtobool
 from rest_framework.exceptions import NotFound
+from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, QuestionSerializer, WritingAnswerSerializer
 
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -1418,11 +1421,11 @@ class RandomWritingQuestionView(APIView):
         return Response({'error': 'No writing questions available'}, status=404)
 
 
-class WritingAnswerCreateView(generics.CreateAPIView):
-    serializer_class = api_serializer.WritingAnswerSerializer
+# class WritingAnswerCreateView(generics.CreateAPIView):
+#     serializer_class = api_serializer.WritingAnswerSerializer
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+#     def perform_create(self, serializer):
+#         serializer.save(user=self.request.user)
 
 
 class WritingAnswerFilteredListView(APIView):
@@ -1537,4 +1540,308 @@ class TeacherDetailView(APIView):
 class UserListView(generics.ListAPIView):
     queryset = User.objects.all()
     serializer_class = api_serializer.UserSerializer
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
+    
+    
+# Define the request body schema as OpenAPI components
+group_request_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'name': openapi.Schema(type=openapi.TYPE_STRING, description='Group name')
+    }
+)
+
+quiz_request_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'title': openapi.Schema(type=openapi.TYPE_STRING, description='Quiz title'),
+        'group': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Group ID')
+        })
+    }
+)
+
+question_request_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'title': openapi.Schema(type=openapi.TYPE_STRING, description='Question title'),
+        'quiz': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Quiz ID')
+        }),
+        'question_type': openapi.Schema(type=openapi.TYPE_STRING, description='Question type'),
+        'answers': openapi.Schema(
+            type=openapi.TYPE_ARRAY,
+            items=openapi.Items(type=openapi.TYPE_OBJECT, properties={
+                'answer_text': openapi.Schema(type=openapi.TYPE_STRING, description='Answer text'),
+                'is_right': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Is the answer correct?')
+            })
+        )
+    }
+)
+
+writing_answer_request_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'question': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID')
+        }),
+        'user': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID')
+        }),
+        'answer_text': openapi.Schema(type=openapi.TYPE_STRING, description='Written answer text'),
+        'submitted_at': openapi.Schema(type=openapi.TYPE_STRING, description='Timestamp of answer submission')
+    }
+)
+
+# Group Views (POST and UPDATE)
+class GroupCreateView(APIView):
+    @swagger_auto_schema(request_body=group_request_schema)
+    def post(self, request, *args, **kwargs):
+        serializer = GroupSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class GroupUpdateView(APIView):
+    @swagger_auto_schema(request_body=group_request_schema)
+    def put(self, request, *args, **kwargs):
+        try:
+            group = api_models.Group.objects.get(id=kwargs['pk'])
+        except api_models.Group.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = GroupSerializer(group, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class GroupListView(APIView):
+    def get(self, request, *args, **kwargs):
+        groups = api_models.Group.objects.all()
+        serializer = GroupSerializer(groups, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class GroupDetailView(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            group = api_models.Group.objects.get(id=kwargs['pk'])
+        except api_models.Group.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = GroupSerializer(group)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class GroupDeleteView(APIView):
+    def delete(self, request, *args, **kwargs):
+        try:
+            group = api_models.Group.objects.get(id=kwargs['pk'])
+        except api_models.Group.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        group.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Quiz Views (POST and UPDATE)
+class QuizCreateView(APIView):
+    @swagger_auto_schema(request_body=quiz_request_schema)
+    def post(self, request, *args, **kwargs):
+        serializer = QuizSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class QuizUpdateView(APIView):
+    @swagger_auto_schema(request_body=quiz_request_schema)
+    def put(self, request, *args, **kwargs):
+        try:
+            quiz = api_models.Quizzes.objects.get(id=kwargs['pk'])
+        except api_models.Quizzes.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = QuizSerializer(quiz, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Question Views (POST and UPDATE)
+class QuestionCreateView(APIView):
+    @swagger_auto_schema(request_body=question_request_schema)
+    def post(self, request, *args, **kwargs):
+        serializer = QuestionSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class QuestionUpdateView(APIView):
+    @swagger_auto_schema(request_body=question_request_schema)
+    def put(self, request, *args, **kwargs):
+        try:
+            question = api_models.Question.objects.get(id=kwargs['pk'])
+        except api_models.Question.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = QuestionSerializer(question, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class QuestionListView(APIView):
+    def get(self, request, *args, **kwargs):
+        questions = api_models.Question.objects.all()
+        serializer = QuestionSerializer(questions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class QuestionDetailView(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            question = api_models.Question.objects.get(id=kwargs['pk'])
+        except api_models.Question.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = QuestionSerializer(question)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class QuestionDeleteView(APIView):
+    def delete(self, request, *args, **kwargs):
+        try:
+            question = api_models.Question.objects.get(id=kwargs['pk'])
+        except api_models.Question.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        question.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class WritingAnswerListView(APIView):
+    def get(self, request, *args, **kwargs):
+        writing_answers = api_models.WritingAnswer.objects.all()
+        serializer = WritingAnswerSerializer(writing_answers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+# Writing Answer Views (POST and UPDATE)
+class WritingAnswerCreateView(APIView):
+    @swagger_auto_schema(request_body=writing_answer_request_schema)
+    def post(self, request, *args, **kwargs):
+        serializer = WritingAnswerSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class WritingAnswerUpdateView(APIView):
+    @swagger_auto_schema(request_body=writing_answer_request_schema)
+    def put(self, request, *args, **kwargs):
+        try:
+            writing_answer = api_models.WritingAnswer.objects.get(id=kwargs['pk'])
+        except api_models.WritingAnswer.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = WritingAnswerSerializer(writing_answer, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+
+class WritingAnswerDetailView(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            writing_answer = api_models.WritingAnswer.objects.get(id=kwargs['pk'])
+        except api_models.WritingAnswer.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = WritingAnswerSerializer(writing_answer)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class WritingAnswerDeleteView(APIView):
+    def delete(self, request, *args, **kwargs):
+        try:
+            writing_answer = api_models.WritingAnswer.objects.get(id=kwargs['pk'])
+        except api_models.WritingAnswer.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        writing_answer.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MCQAnswerCreateView(APIView):
+    @swagger_auto_schema(request_body=api_serializer.MCQAnswerSerializer(many=True))
+    def post(self, request, *args, **kwargs):
+        serializer = api_serializer.MCQAnswerSerializer(data=request.data, many=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+class MCQAnswerUpdateView(APIView):
+    @swagger_auto_schema(request_body=api_serializer.MCQAnswerSerializer)
+    def put(self, request, *args, **kwargs):
+        try:
+            mcq_answer = api_models.MCQAnswer.objects.get(id=kwargs['pk'])
+        except api_models.MCQAnswer.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = api_serializer.MCQAnswerSerializer(mcq_answer, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MCQAnswerListView(APIView):
+    def get(self, request, *args, **kwargs):
+        mcq_answers = api_models.MCQAnswer.objects.all()
+        serializer = api_serializer.MCQAnswerSerializer(mcq_answers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class MCQAnswerDetailView(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            mcq_answer = api_models.MCQAnswer.objects.get(id=kwargs['pk'])
+        except api_models.MCQAnswer.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = api_serializer.MCQAnswerSerializer(mcq_answer)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class MCQAnswerDeleteView(APIView):
+    def delete(self, request, *args, **kwargs):
+        try:
+            mcq_answer = api_models.MCQAnswer.objects.get(id=kwargs['pk'])
+        except api_models.MCQAnswer.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        mcq_answer.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AnswerCountView(APIView):
+    def get(self, request, *args, **kwargs):
+        question_id = kwargs.get('question_id')
+        try:
+            question = api_models.Question.objects.get(id=question_id)
+        except api_models.Question.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        mcq_correct_count = question.mcq_answers.filter(selected_answer__is_right=True).count()
+        total_mcq_answers = question.mcq_answers.count()
+        total_writing_answers = question.writing_answers.count()
+
+        return Response({
+            "total_mcq_answers": total_mcq_answers,
+            "mcq_correct_count": mcq_correct_count,
+            "total_writing_answers": total_writing_answers
+        }, status=status.HTTP_200_OK)

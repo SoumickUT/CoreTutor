@@ -414,13 +414,26 @@ class GroupSerializer(serializers.ModelSerializer):
         model = api_models.Group
         fields = ['id', 'name']
 
+class GroupIdField(serializers.PrimaryKeyRelatedField):
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            return super().to_internal_value(data.get('id'))
+        return super().to_internal_value(data)
 
 class QuizSerializer(serializers.ModelSerializer):
-    group = GroupSerializer(read_only=True)
+    group = GroupIdField(queryset=api_models.Group.objects.all())
 
     class Meta:
         model = api_models.Quizzes
         fields = ['id', 'title', 'group']
+
+
+class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            return super().to_internal_value(data.get('id'))
+        return super().to_internal_value(data)
+
 
 
 class AnswerSerializer(serializers.ModelSerializer):
@@ -429,18 +442,63 @@ class AnswerSerializer(serializers.ModelSerializer):
         fields = ['id', 'answer_text', 'is_right']
 
 
+class AnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Answer
+        fields = ['answer_text', 'is_right']
+
 class QuestionSerializer(serializers.ModelSerializer):
-    answers = AnswerSerializer(many=True, read_only=True)
+    quiz = NestedPrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())
+    answers = AnswerSerializer(many=True)
+
+    question_type = serializers.ChoiceField(
+        choices=api_models.Question.QUIZ_TYPES,
+        help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
+    )
 
     class Meta:
         model = api_models.Question
         fields = ['id', 'title', 'quiz', 'question_type', 'answers']
 
+    def create(self, validated_data):
+        answers_data = validated_data.pop('answers')
+        question = api_models.Question.objects.create(**validated_data)
+        for answer_data in answers_data:
+            api_models.Answer.objects.create(question=question, **answer_data)
+        return question
+
+
+class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            return super().to_internal_value(data.get('id'))
+        return super().to_internal_value(data)
+        
 class WritingAnswerSerializer(serializers.ModelSerializer):
+    question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+    user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
+
     class Meta:
         model = api_models.WritingAnswer
         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
+
         
+class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            return super().to_internal_value(data.get('id'))
+        return super().to_internal_value(data)
+
+class MCQAnswerSerializer(serializers.ModelSerializer):
+    question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+    user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
+    selected_answer = NestedPrimaryKeyRelatedField(queryset=api_models.Answer.objects.all())
+
+    class Meta:
+        model = api_models.MCQAnswer
+        fields = ['id', 'question', 'user', 'selected_answer', 'submitted_at']
+
+
         
 
 class CreateTeacherSerializer(serializers.ModelSerializer):
@@ -453,3 +511,9 @@ class CreateTeacherSerializer(serializers.ModelSerializer):
         if value and not value.name.endswith(('.jpg', '.jpeg', '.png')):
             raise serializers.ValidationError("Image must be in .jpg, .jpeg, or .png format.")
         return value
+
+
+# class UserSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = User
+#         fields = ['username', 'email', 'full_name', 'phone', 'address', 'city', 'state', 'zip_code', 'school_name', 'session', 'branch', 'grade', 'program', 'tutoring_schedule', 'enrollment_date', 'amounts', 'guardian_name', 'guardian_relationship', 'guardian_phone', 'payment_plan', 'signature']

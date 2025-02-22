@@ -424,19 +424,63 @@ class Quizzes(models.Model):
         return self.title
 
 
+# class Question(models.Model):
+#     """
+#     Model representing a question in a quiz.
+    
+#     Choices for question types:
+#     - 'MCQ' (Multiple Choice Question)
+#     - 'WRITING' (Writing Question)
+#     """
+    
+#     QUIZ_TYPES = [
+#         ('MCQ', 'Multiple Choice Question'),
+#         ('WRITING', 'Writing Question'),
+#     ]
+    
+#     quiz = models.ForeignKey(Quizzes, on_delete=models.CASCADE, related_name="questions")
+#     title = models.CharField(max_length=255)
+#     question_type = models.CharField(
+#         max_length=10,
+#         choices=QUIZ_TYPES,
+#         default='MCQ',
+#         help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
+#     )
+#     date_updated = models.DateTimeField(auto_now=True)
+
+#     def __str__(self):
+#         return self.title
+
+
 class Question(models.Model):
+    """
+    Model representing a question in a quiz.
+    
+    Choices for question types:
+    - 'MCQ' (Multiple Choice Question)
+    - 'WRITING' (Writing Question)
+    """
+    
     QUIZ_TYPES = [
         ('MCQ', 'Multiple Choice Question'),
         ('WRITING', 'Writing Question'),
     ]
-
+    
     quiz = models.ForeignKey(Quizzes, on_delete=models.CASCADE, related_name="questions")
     title = models.CharField(max_length=255)
-    question_type = models.CharField(max_length=10, choices=QUIZ_TYPES, default='MCQ')
+    question_type = models.CharField(
+        max_length=10,
+        choices=QUIZ_TYPES,
+        default='MCQ',
+        help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
+    )
     date_updated = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title
+
+    def count_correct_answers(self):
+        return self.mcq_answers.filter(selected_answer__is_right=True).count()
 
 
 class Answer(models.Model):
@@ -456,3 +500,11 @@ class WritingAnswer(models.Model):
     def __str__(self):
         return f"Answer by {self.user} for {self.question.title}"
 
+class MCQAnswer(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="mcq_answers")
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    selected_answer = models.ForeignKey(Answer, on_delete=models.CASCADE)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"MCQ Answer by {self.user} for {self.question.title}"

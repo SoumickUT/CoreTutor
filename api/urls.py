@@ -85,6 +85,39 @@ urlpatterns = [
     path('writing-answers/', api_views.WritingAnswerCreateView.as_view(), name='writing-answer-create'),
     path('writing-answers/<int:question_id>/user/<int:user_id>/', api_views.WritingAnswerFilteredListView.as_view(), name='writing-answer-filtered-list'),
     
+    # Group URLs
+    path('groups/', api_views.GroupListView.as_view(), name='group-list'),
+    path('groups/create/', api_views.GroupCreateView.as_view(), name='group-create'),
+    path('groups/<int:pk>/', api_views.GroupDetailView.as_view(), name='group-detail'),
+    path('groups/<int:pk>/update/', api_views.GroupUpdateView.as_view(), name='group-update'),
+    path('groups/<int:pk>/delete/', api_views.GroupDeleteView.as_view(), name='group-delete'),
+
+    # Quiz URLs
+    path('quizzes/create/', api_views.QuizCreateView.as_view(), name='quiz-create'),
+    path('quizzes/<int:pk>/', api_views.QuizUpdateView.as_view(), name='quiz-update'),
+
+    # Question URLs
+    path('questions/', api_views.QuestionListView.as_view(), name='question-list'),
+    path('questions/create/', api_views.QuestionCreateView.as_view(), name='question-create'),
+    path('questions/<int:pk>/', api_views.QuestionDetailView.as_view(), name='question-detail'),
+    path('questions/<int:pk>/update/', api_views.QuestionUpdateView.as_view(), name='question-update'),
+    path('questions/<int:pk>/delete/', api_views.QuestionDeleteView.as_view(), name='question-delete'),
+
+    # Writing Answer URLs
+    path('writing-answers/', api_views.WritingAnswerListView.as_view(), name='writing-answer-list'),
+    path('writing-answers/create/', api_views.WritingAnswerCreateView.as_view(), name='writing-answer-create'),
+    path('writing-answers/<int:pk>/', api_views.WritingAnswerDetailView.as_view(), name='writing-answer-detail'),
+    path('writing-answers/<int:pk>/update/', api_views.WritingAnswerUpdateView.as_view(), name='writing-answer-update'),
+    path('writing-answers/<int:pk>/delete/', api_views.WritingAnswerDeleteView.as_view(), name='writing-answer-delete'),
+
+    
+    path('mcq-answers/', api_views.MCQAnswerListView.as_view(), name='mcq-answer-list'),
+    path('mcq-answers/create/', api_views.MCQAnswerCreateView.as_view(), name='mcq-answer-create'),
+    path('mcq-answers/<int:pk>/', api_views.MCQAnswerDetailView.as_view(), name='mcq-answer-detail'),
+    path('mcq-answers/<int:pk>/update/', api_views.MCQAnswerUpdateView.as_view(), name='mcq-answer-update'),
+    path('mcq-answers/<int:pk>/delete/', api_views.MCQAnswerDeleteView.as_view(), name='mcq-answer-delete'),
+    path('answer-count/<int:question_id>/', api_views.AnswerCountView.as_view(), name='answer-count')
+    
     # path('courses/create/', api_views.CourseViewSet.as_view({'post': 'create'}), name='course-create'),
     
     
