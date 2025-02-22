@@ -19,6 +19,11 @@ urlpatterns = [
     # Core Endpoints
     path("course/category/", api_views.CategoryListAPIView.as_view()),
     path("course/course-list/", api_views.CourseListAPIView.as_view()),
+    path("course/categories/create/", api_views.CategoryCreateView.as_view(), name='category-create'),
+    
+    # Retrieve, update, or delete a category by slug
+    path("course/categories/<slug:slug>/", api_views.CategoryDetailView.as_view(), name='category-detail'),
+    
     path("course/search/", api_views.SearchCourseAPIView.as_view()),
     # path("course/course-detail/<slug>/", api_views.CourseDetailAPIView.as_view()),
     path('course-detail/<slug:slug>/', api_views.CourseDetailAPIView.as_view(), name='course-detail'), ##Change this url 1-25-25
