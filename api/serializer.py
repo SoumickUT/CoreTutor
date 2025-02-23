@@ -23,6 +23,29 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         return token
 
+class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        token['full_name'] = user.full_name
+        token['email'] = user.email
+        token['username'] = user.username
+        try:
+            token['teacher_id'] = user.teacher.id
+        except:
+            token['teacher_id'] = 0
+            
+        # Add admin status if both is_superuser and is_staff are True
+        if user.is_superuser and user.is_staff:
+            token['is_admin'] = True
+        else:
+            token['is_admin'] = False
+
+        return token
+
+
+    
 # class RegisterSerializer(serializers.ModelSerializer):
 #     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
 #     password2 = serializers.CharField(write_only=True, required=True)
@@ -512,6 +535,21 @@ class CreateTeacherSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Image must be in .jpg, .jpeg, or .png format.")
         return value
 
+
+class AdminSerializer(serializers.ModelSerializer):
+    can_login_as_admin = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
+        read_only_fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
+
+    def get_can_login_as_admin(self, obj):
+        return obj.can_login_as_admin()
+
+class AdminLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
 
 # class UserSerializer(serializers.ModelSerializer):
 #     class Meta:

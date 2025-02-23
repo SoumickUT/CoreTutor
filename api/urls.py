@@ -8,6 +8,7 @@ urlpatterns = [
     # Authentication Endpoints
 
     path("user/token/", api_views.MyTokenObtainPairView.as_view()),
+    path('admin/login/', api_views.AdminView.as_view(), name='admin-login'),
     path("user/token/refresh/", TokenRefreshView.as_view()),
     path("user/register/", api_views.RegisterView.as_view()),
     path("user/password-reset/<email>/", api_views.PasswordResetEmailVerifyAPIView.as_view()),

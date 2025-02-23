@@ -56,6 +56,10 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
     
+    def can_login_as_admin(self):
+        """Check if user has admin login privileges"""
+        return self.is_superuser and self.is_staff
+    
     def save(self, *args, **kwargs):
         email_username, full_name = self.email.split("@")
         if not self.full_name:
