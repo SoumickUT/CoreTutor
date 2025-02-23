@@ -1887,17 +1887,15 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     
 
 
-
 # Custom permission class (unchanged)
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.can_login_as_admin())
 
 class AdminView(APIView):
-    # We'll handle authentication in the view itself, so no permission_classes needed
     serializer_class = api_serializer.AdminSerializer
 
-    def post(self, request):  # Changed to POST to accept email/password in body
+    def post(self, request):
         # Validate request data
         login_serializer = api_serializer.AdminLoginSerializer(data=request.data)
         if not login_serializer.is_valid():
@@ -1923,9 +1921,57 @@ class AdminView(APIView):
                 "error": "User is not authorized as admin"
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Serialize user data and return success response
+        # Generate tokens using Simple JWT
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
+        # Serialize user data
         serializer = self.serializer_class(user)
         return Response({
             "message": "Welcome Admin",
-            "user": serializer.data
+            "user": serializer.data,
+            "access_token": access_token,
+            "refresh_token": str(refresh)
         }, status=status.HTTP_200_OK)
+
+# # Custom permission class (unchanged)
+# class IsAdminUser(permissions.BasePermission):
+#     def has_permission(self, request, view):
+#         return bool(request.user and request.user.can_login_as_admin())
+
+# class AdminView(APIView):
+#     # We'll handle authentication in the view itself, so no permission_classes needed
+#     serializer_class = api_serializer.AdminSerializer
+
+#     def post(self, request):  # Changed to POST to accept email/password in body
+#         # Validate request data
+#         login_serializer = api_serializer.AdminLoginSerializer(data=request.data)
+#         if not login_serializer.is_valid():
+#             return Response({
+#                 "error": login_serializer.errors
+#             }, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Get email and password from request
+#         email = login_serializer.validated_data['email']
+#         password = login_serializer.validated_data['password']
+
+#         # Authenticate user
+#         user = authenticate(request=request, email=email, password=password)
+        
+#         if user is None:
+#             return Response({
+#                 "error": "Invalid email or password"
+#             }, status=status.HTTP_401_UNAUTHORIZED)
+
+#         # Check if user can login as admin
+#         if not user.can_login_as_admin():
+#             return Response({
+#                 "error": "User is not authorized as admin"
+#             }, status=status.HTTP_403_FORBIDDEN)
+
+#         # Serialize user data and return success response
+#         serializer = self.serializer_class(user)
+#         return Response({
+#             "message": "Welcome Admin",
+#             "user": serializer.data
+#         }, status=status.HTTP_200_OK)
