@@ -45,6 +45,21 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
 
+class AdminSerializer(serializers.ModelSerializer):
+    can_login_as_admin = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
+        read_only_fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
+
+    def get_can_login_as_admin(self, obj):
+        return obj.can_login_as_admin()
+
+class AdminLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
     
 # class RegisterSerializer(serializers.ModelSerializer):
 #     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -465,10 +480,10 @@ class AnswerSerializer(serializers.ModelSerializer):
         fields = ['id', 'answer_text', 'is_right']
 
 
-class AnswerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = api_models.Answer
-        fields = ['answer_text', 'is_right']
+# class AnswerSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = api_models.Answer
+#         fields = ['answer_text', 'is_right']
 
 class QuestionSerializer(serializers.ModelSerializer):
     quiz = NestedPrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())

@@ -1655,7 +1655,12 @@ class GroupDeleteView(APIView):
 class QuizCreateView(APIView):
     @swagger_auto_schema(request_body=quiz_request_schema)
     def post(self, request, *args, **kwargs):
-        serializer = QuizSerializer(data=request.data)
+        # Check if the input data is a list
+        if isinstance(request.data, list):
+            serializer = QuizSerializer(data=request.data, many=True)
+        else:
+            serializer = QuizSerializer(data=request.data)
+            
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -1679,7 +1684,12 @@ class QuizUpdateView(APIView):
 class QuestionCreateView(APIView):
     @swagger_auto_schema(request_body=question_request_schema)
     def post(self, request, *args, **kwargs):
-        serializer = QuestionSerializer(data=request.data)
+        # Check if the input data is a list
+        if isinstance(request.data, list):
+            serializer = QuestionSerializer(data=request.data, many=True)
+        else:
+            serializer = QuestionSerializer(data=request.data)
+            
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
