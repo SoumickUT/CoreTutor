@@ -35,7 +35,7 @@ from datetime import datetime, timedelta
 from distutils.util import strtobool
 from rest_framework.exceptions import NotFound
 from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, QuestionSerializer, WritingAnswerSerializer
-
+from django.views.decorators.csrf import csrf_exempt
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
@@ -48,7 +48,8 @@ class MyTokenObtainPairView(TokenObtainPairView):
     
 class AdminTokenObtainPairView(TokenObtainPairView):
     serializer_class = api_serializer.AdminTokenObtainPairSerializer
-
+    
+# @csrf_exempt
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [AllowAny]
@@ -1558,14 +1559,30 @@ group_request_schema = openapi.Schema(
     }
 )
 
+# quiz_request_schema = openapi.Schema(
+#     type=openapi.TYPE_OBJECT,
+#     properties={
+#         'title': openapi.Schema(type=openapi.TYPE_STRING, description='Quiz title'),
+#         'group': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+#             'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Group ID')
+#         })
+#     }
+# )
+
 quiz_request_schema = openapi.Schema(
     type=openapi.TYPE_OBJECT,
     properties={
         'title': openapi.Schema(type=openapi.TYPE_STRING, description='Quiz title'),
-        'group': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
-            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Group ID')
-        })
-    }
+        'group': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Group ID')
+            },
+            required=['id']  # Ensure 'id' is required within 'group'
+        ),
+        'time_limit': openapi.Schema(type=openapi.TYPE_INTEGER, description='Time limit for the quiz in minutes')
+    },
+    required=['title', 'group', 'time_limit']  # Make all top-level fields required
 )
 
 question_request_schema = openapi.Schema(
@@ -1655,12 +1672,11 @@ class GroupDeleteView(APIView):
 class QuizCreateView(APIView):
     @swagger_auto_schema(request_body=quiz_request_schema)
     def post(self, request, *args, **kwargs):
-        # Check if the input data is a list
         if isinstance(request.data, list):
             serializer = QuizSerializer(data=request.data, many=True)
         else:
             serializer = QuizSerializer(data=request.data)
-            
+        
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -1944,6 +1960,95 @@ class AdminView(APIView):
             "refresh_token": str(refresh)
         }, status=status.HTTP_200_OK)
 
+
+class GroupQuizDetailsView(APIView):
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'group_id',
+                openapi.IN_PATH,
+                description="ID of the group to fetch",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: api_serializer.GroupDetailSerializer,  # Updated serializer
+            404: "Group not found"
+        }
+    )
+    def get(self, request, group_id, *args, **kwargs):
+        try:
+            group = api_models.Group.objects.prefetch_related(
+                'quizzes__questions__answers'
+            ).get(id=group_id)
+        except api_models.Group.DoesNotExist:
+            return Response({"detail": "Group not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = api_serializer.GroupDetailSerializer(group)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+class GroupQuizByQuestionTypeView(APIView):
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'group_id',
+                openapi.IN_PATH,
+                description="ID of the group to fetch",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'question_type',
+                openapi.IN_QUERY,
+                description="Type of questions to filter (e.g., 'MCQ' or 'WRITING')",
+                type=openapi.TYPE_STRING,
+                enum=['MCQ', 'WRITING'],
+                required=True
+            )
+        ],
+        responses={
+            200: api_serializer.GroupDetailSerializer,
+            404: "Group not found",
+            400: "Invalid question type"
+        }
+    )
+    def get(self, request, group_id, *args, **kwargs):
+        # Get the question_type from query parameters
+        question_type = request.query_params.get('question_type', None)
+        
+        # Validate question_type
+        valid_question_types = [choice[0] for choice in api_models.Question.QUIZ_TYPES]
+        if not question_type or question_type not in valid_question_types:
+            return Response(
+                {"detail": f"Invalid question type. Must be one of: {', '.join(valid_question_types)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Fetch the group with related data
+        try:
+            group = api_models.Group.objects.prefetch_related(
+                'quizzes__questions__answers'
+            ).get(id=group_id)
+        except api_models.Group.DoesNotExist:
+            return Response({"detail": "Group not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get serialized data
+        serializer = api_serializer.GroupDetailSerializer(group)
+        data = serializer.data
+
+        # Filter questions by question_type
+        for quiz in data['quizzes']:
+            quiz['questions'] = [
+                q for q in quiz['questions'] if q['question_type'] == question_type
+            ]
+
+        # Remove quizzes with no matching questions (optional)
+        data['quizzes'] = [quiz for quiz in data['quizzes'] if quiz['questions']]
+
+        return Response(data, status=status.HTTP_200_OK)
+    
 # # Custom permission class (unchanged)
 # class IsAdminUser(permissions.BasePermission):
 #     def has_permission(self, request, view):

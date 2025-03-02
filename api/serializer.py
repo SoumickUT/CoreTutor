@@ -459,11 +459,11 @@ class GroupIdField(serializers.PrimaryKeyRelatedField):
         return super().to_internal_value(data)
 
 class QuizSerializer(serializers.ModelSerializer):
-    group = GroupIdField(queryset=api_models.Group.objects.all())
+    group = GroupIdField(queryset=api_models.Group.objects.all())  # Handles input/output for group
 
     class Meta:
         model = api_models.Quizzes
-        fields = ['id', 'title', 'group']
+        fields = ['id', 'title', 'group', 'time_limit']
 
 
 class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
@@ -570,3 +570,31 @@ class AdminLoginSerializer(serializers.Serializer):
 #     class Meta:
 #         model = User
 #         fields = ['username', 'email', 'full_name', 'phone', 'address', 'city', 'state', 'zip_code', 'school_name', 'session', 'branch', 'grade', 'program', 'tutoring_schedule', 'enrollment_date', 'amounts', 'guardian_name', 'guardian_relationship', 'guardian_phone', 'payment_plan', 'signature']
+
+
+
+class AnswerDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Answer
+        fields = ['id', 'answer_text', 'is_right']
+
+class QuestionDetailSerializer(serializers.ModelSerializer):
+    answers = AnswerDetailSerializer(many=True, read_only=True)  # Nested answers
+
+    class Meta:
+        model = api_models.Question
+        fields = ['id', 'title', 'question_type', 'date_updated', 'answers']
+
+class QuizDetailSerializer(serializers.ModelSerializer):
+    questions = QuestionDetailSerializer(many=True, read_only=True)  # Nested questions
+
+    class Meta:
+        model = api_models.Quizzes
+        fields = ['id', 'title', 'date_created', 'time_limit', 'questions']
+
+class GroupDetailSerializer(serializers.ModelSerializer):
+    quizzes = QuizDetailSerializer(many=True, read_only=True)  # Nested quizzes
+
+    class Meta:
+        model = api_models.Group
+        fields = ['id', 'name', 'quizzes']

@@ -415,10 +415,22 @@ class Group(models.Model):
         return self.name
 
 
+# class Quizzes(models.Model):
+#     title = models.CharField(max_length=100)
+#     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="quizzes")
+#     date_created = models.DateTimeField(auto_now_add=True)
+
+#     def __str__(self):
+#         return self.title
+
 class Quizzes(models.Model):
     title = models.CharField(max_length=100)
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="quizzes")
     date_created = models.DateTimeField(auto_now_add=True)
+    time_limit = models.PositiveIntegerField(
+        default=30, 
+        help_text="Time limit for the quiz in minutes."
+    )
 
     def __str__(self):
         return self.title

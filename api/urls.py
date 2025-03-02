@@ -97,6 +97,8 @@ urlpatterns = [
     path('groups/<int:pk>/', api_views.GroupDetailView.as_view(), name='group-detail'),
     path('groups/<int:pk>/update/', api_views.GroupUpdateView.as_view(), name='group-update'),
     path('groups/<int:pk>/delete/', api_views.GroupDeleteView.as_view(), name='group-delete'),
+    path('groups/<int:group_id>/details/', api_views.GroupQuizDetailsView.as_view(), name='group-quiz-details'),
+    path('groups/<int:group_id>/quiz-by-type/', api_views.GroupQuizByQuestionTypeView.as_view(), name='group-quiz-by-type'),
 
     # Quiz URLs
     path('quizzes/create/', api_views.QuizCreateView.as_view(), name='quiz-create'),
@@ -122,7 +124,9 @@ urlpatterns = [
     path('mcq-answers/<int:pk>/', api_views.MCQAnswerDetailView.as_view(), name='mcq-answer-detail'),
     path('mcq-answers/<int:pk>/update/', api_views.MCQAnswerUpdateView.as_view(), name='mcq-answer-update'),
     path('mcq-answers/<int:pk>/delete/', api_views.MCQAnswerDeleteView.as_view(), name='mcq-answer-delete'),
-    path('answer-count/<int:question_id>/', api_views.AnswerCountView.as_view(), name='answer-count')
+    path('answer-count/<int:question_id>/', api_views.AnswerCountView.as_view(), name='answer-count'),
+    
+   
     
     # path('courses/create/', api_views.CourseViewSet.as_view({'post': 'create'}), name='course-create'),
     
