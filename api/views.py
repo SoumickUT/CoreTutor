@@ -1712,18 +1712,88 @@ class QuestionCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class QuestionUpdateView(APIView):
-    @swagger_auto_schema(request_body=question_request_schema)
+    @swagger_auto_schema(
+        request_body=question_request_schema,
+        responses={
+            200: "Question(s) updated successfully",
+            404: "Question not found",
+            400: "Invalid request data",
+            500: "Internal server error"
+        }
+    )
     def put(self, request, *args, **kwargs):
         try:
-            question = api_models.Question.objects.get(id=kwargs['pk'])
-        except api_models.Question.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            # Check if the input data is a list (bulk update) or a single dictionary
+            is_list = isinstance(request.data, list)
+            data = request.data if is_list else [request.data]  # Wrap single dict in a list
+            
+            # If URL includes a specific pk, ensure we're updating that question only
+            pk = kwargs.get('pk')
+            if pk and is_list:
+                return Response(
+                    {"detail": "Bulk update not allowed when specifying a single question ID."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        serializer = QuestionSerializer(question, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            updated_questions = []
+            errors = []
+
+            for item in data:
+                if pk:  # Single question update via URL pk
+                    try:
+                        question = api_models.Question.objects.get(id=pk)
+                    except api_models.Question.DoesNotExist:
+                        return Response(
+                            {"detail": f"Question with id {pk} not found."},
+                            status=status.HTTP_404_NOT_FOUND
+                        )
+                else:  # Bulk update expects 'id' in each item
+                    question_id = item.get('id')
+                    if not question_id:
+                        errors.append({"item": item, "error": "Question ID is required for bulk update."})
+                        continue
+                    try:
+                        question = api_models.Question.objects.get(id=question_id)
+                    except api_models.Question.DoesNotExist:
+                        errors.append({"item": item, "error": f"Question with id {question_id} not found."})
+                        continue
+
+                serializer = QuestionSerializer(question, data=item, partial=True)
+                if serializer.is_valid():
+                    serializer.save()
+                    updated_questions.append(serializer.data)
+                else:
+                    errors.append({"item": item, "errors": serializer.errors})
+
+            if errors:
+                return Response(
+                    {"updated": updated_questions, "errors": errors},
+                    status=status.HTTP_400_BAD_REQUEST if not updated_questions else status.HTTP_207_MULTI_STATUS
+                )
+            return Response(
+                updated_questions if is_list else updated_questions[0],
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to update question(s): {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+# class QuestionUpdateView(APIView):
+#     @swagger_auto_schema(request_body=question_request_schema)
+#     def put(self, request, *args, **kwargs):
+#         try:
+#             question = api_models.Question.objects.get(id=kwargs['pk'])
+#         except api_models.Question.DoesNotExist:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+#         serializer = QuestionSerializer(question, data=request.data, partial=True)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_200_OK)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class QuestionListView(APIView):
     def get(self, request, *args, **kwargs):

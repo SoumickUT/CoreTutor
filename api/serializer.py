@@ -485,6 +485,7 @@ class AnswerSerializer(serializers.ModelSerializer):
 #         model = api_models.Answer
 #         fields = ['answer_text', 'is_right']
 
+############# 03/06/2025#################
 class QuestionSerializer(serializers.ModelSerializer):
     quiz = NestedPrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())
     answers = AnswerSerializer(many=True)
@@ -504,7 +505,93 @@ class QuestionSerializer(serializers.ModelSerializer):
         for answer_data in answers_data:
             api_models.Answer.objects.create(question=question, **answer_data)
         return question
+    
+    def update(self, instance, validated_data):
+        # Handle nested answers separately
+        answers_data = validated_data.pop('answers', None)
+        
+        # Update question fields
+        instance.title = validated_data.get('title', instance.title)
+        instance.quiz = validated_data.get('quiz', instance.quiz)
+        instance.question_type = validated_data.get('question_type', instance.question_type)
+        instance.save()
 
+        # Handle answers if they were provided in the update
+        if answers_data is not None:
+            # Get existing answers
+            existing_answers = {answer.id: answer for answer in instance.answers.all()}
+            updated_answer_ids = []
+
+            # Update or create answers
+            for answer_data in answers_data:
+                answer_id = answer_data.get('id')
+                if answer_id and answer_id in existing_answers:
+                    # Update existing answer
+                    answer = existing_answers[answer_id]
+                    for attr, value in answer_data.items():
+                        setattr(answer, attr, value)
+                    answer.save()
+                    updated_answer_ids.append(answer_id)
+                else:
+                    # Create new answer
+                    api_models.Answer.objects.create(question=instance, **answer_data)
+
+            # Delete answers that weren't included in the update
+            for answer_id, answer in existing_answers.items():
+                if answer_id not in updated_answer_ids:
+                    answer.delete()
+
+        return instance
+
+# class QuestionSerializer(serializers.ModelSerializer):
+#     quiz = NestedPrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())
+#     answers = AnswerSerializer(many=True, required=False, allow_empty=True)  # Allow empty answers
+
+#     question_type = serializers.ChoiceField(
+#         choices=api_models.Question.QUIZ_TYPES,
+#         help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
+#     )
+
+#     class Meta:
+#         model = api_models.Question
+#         fields = ['id', 'title', 'quiz', 'question_type', 'answers']
+
+#     def create(self, validated_data):
+#         answers_data = validated_data.pop('answers', [])  # Default to empty list if not provided
+#         question = api_models.Question.objects.create(**validated_data)
+#         for answer_data in answers_data:
+#             api_models.Answer.objects.create(question=question, **answer_data)
+#         return question
+
+#     def update(self, instance, validated_data):
+#         instance.title = validated_data.get('title', instance.title)
+#         instance.quiz = validated_data.get('quiz', instance.quiz)
+#         instance.question_type = validated_data.get('question_type', instance.question_type)
+
+#         if 'answers' in validated_data:
+#             answers_data = validated_data.pop('answers')
+#             existing_answers = {answer.id: answer for answer in instance.answers.all()}
+#             new_answers = []
+
+#             for answer_data in answers_data:
+#                 answer_id = answer_data.get('id', None)
+#                 if answer_id and answer_id in existing_answers:
+#                     answer = existing_answers[answer_id]
+#                     answer.text = answer_data.get('text', answer.text)
+#                     answer.is_correct = answer_data.get('is_correct', answer.is_correct)
+#                     answer.save()
+#                     del existing_answers[answer_id]
+#                 else:
+#                     new_answers.append(answer_data)
+
+#             for answer in existing_answers.values():
+#                 answer.delete()
+
+#             for answer_data in new_answers:
+#                 api_models.Answer.objects.create(question=instance, **answer_data)
+
+#         instance.save()
+#         return instance
 
 class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
