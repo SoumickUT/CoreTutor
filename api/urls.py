@@ -88,7 +88,7 @@ urlpatterns = [
     
     path('quizzes/<int:quiz_id>/writing-questions/', api_views.WritingQuestionListView.as_view(), name='writing-question-list'),
     path('quizzes/<int:quiz_id>/random-writing-question/', api_views.RandomWritingQuestionView.as_view(), name='random-writing-question'),
-    path('writing-answers/', api_views.WritingAnswerCreateView.as_view(), name='writing-answer-create'),
+    # path('writing-answers/', api_views.WritingAnswerCreateView.as_view(), name='writing-answer-create'),
     path('writing-answers/<int:question_id>/user/<int:user_id>/', api_views.WritingAnswerFilteredListView.as_view(), name='writing-answer-filtered-list'),
     
     # Group URLs
@@ -117,6 +117,8 @@ urlpatterns = [
     path('writing-answers/<int:pk>/', api_views.WritingAnswerDetailView.as_view(), name='writing-answer-detail'),
     path('writing-answers/<int:pk>/update/', api_views.WritingAnswerUpdateView.as_view(), name='writing-answer-update'),
     path('writing-answers/<int:pk>/delete/', api_views.WritingAnswerDeleteView.as_view(), name='writing-answer-delete'),
+    path('writing-answers/<int:user_id>/', api_views.WritingAnswersByUserView.as_view(), name='writing-answers-by-user'),
+    path('writing-answers/non_authen/<int:user_id>/', api_views.NonAuthenTicateWritingAnswersByUserView.as_view(), name='writing-answers-by-non-athun-ser'),
 
     
     path('mcq-answers/', api_views.MCQAnswerListView.as_view(), name='mcq-answer-list'),
@@ -124,6 +126,8 @@ urlpatterns = [
     path('mcq-answers/<int:pk>/', api_views.MCQAnswerDetailView.as_view(), name='mcq-answer-detail'),
     path('mcq-answers/<int:pk>/update/', api_views.MCQAnswerUpdateView.as_view(), name='mcq-answer-update'),
     path('mcq-answers/<int:pk>/delete/', api_views.MCQAnswerDeleteView.as_view(), name='mcq-answer-delete'),
+    path('mcq-answers/<int:user_id>/', api_views.MCQAnswersByUserView.as_view(), name='mcq-answers-by-user'),
+    path('mcq-answers/non_authen/<int:user_id>/', api_views.NonAuthenTicateMCQAnswersByUserView.as_view(), name='mcq-answers-by-non-athun-user'),
     path('answer-count/<int:question_id>/', api_views.AnswerCountView.as_view(), name='answer-count'),
     
    

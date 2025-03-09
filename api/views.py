@@ -36,6 +36,7 @@ from distutils.util import strtobool
 from rest_framework.exceptions import NotFound
 from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, QuestionSerializer, WritingAnswerSerializer
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.pagination import PageNumberPagination
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
@@ -43,11 +44,48 @@ PAYPAL_SECRET_ID = settings.PAYPAL_SECRET_ID
 
 
 
+# class MyTokenObtainPairView(TokenObtainPairView):
+#     serializer_class = api_serializer.MyTokenObtainPairSerializer
+    
+# class AdminTokenObtainPairView(TokenObtainPairView):
+#     serializer_class = api_serializer.AdminTokenObtainPairSerializer
+
+# Token Views
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = api_serializer.MyTokenObtainPairSerializer
-    
+
 class AdminTokenObtainPairView(TokenObtainPairView):
     serializer_class = api_serializer.AdminTokenObtainPairSerializer
+
+# Custom Admin Login View
+class AdminView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
+
+    def post(self, request, *args, **kwargs):
+        serializer = api_serializer.AdminLoginSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            password = serializer.validated_data['password']
+            user = authenticate(email=email, password=password)
+            if user and user.is_superuser and user.is_staff:
+                # Generate tokens
+                refresh = RefreshToken.for_user(user)
+                token_serializer = api_serializer.AdminTokenObtainPairSerializer()
+                token_data = token_serializer.get_token(user)
+
+                # Serialize user data
+                user_serializer = api_serializer.AdminSerializer(user)
+
+                # Construct response
+                response_data = {
+                    "message": "Welcome Admin",
+                    "user": user_serializer.data,
+                    "access_token": str(token_data.access_token),
+                    "refresh_token": str(refresh),
+                }
+                return Response(response_data, status=status.HTTP_200_OK)
+            return Response({"detail": "Invalid credentials or not an admin."}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 # @csrf_exempt
 class RegisterView(generics.CreateAPIView):
@@ -1389,11 +1427,11 @@ class QuizListView(generics.ListAPIView):
     serializer_class = api_serializer.QuizSerializer
 
 
-class QuestionListView(APIView):
-    def get(self, request, quiz_id):
-        questions = api_models.Question.objects.filter(quiz_id=quiz_id)
-        serializer = api_serializer.QuestionSerializer(questions, many=True)
-        return Response(serializer.data)
+# class QuestionListView(APIView):
+#     def get(self, request, quiz_id):
+#         questions = api_models.Question.objects.filter(quiz_id=quiz_id)
+#         serializer = api_serializer.QuestionSerializer(questions, many=True)
+#         return Response(serializer.data)
 
 
 class RandomQuestionView(APIView):
@@ -1603,19 +1641,35 @@ question_request_schema = openapi.Schema(
     }
 )
 
+
 writing_answer_request_schema = openapi.Schema(
     type=openapi.TYPE_OBJECT,
     properties={
-        'question': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
-            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID')
-        }),
-        'user': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
-            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID')
-        }),
+        'question': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID')
+            }
+        ),
         'answer_text': openapi.Schema(type=openapi.TYPE_STRING, description='Written answer text'),
-        'submitted_at': openapi.Schema(type=openapi.TYPE_STRING, description='Timestamp of answer submission')
-    }
+        # 'user' and 'submitted_at' are omitted since they’re set automatically
+    },
+    required=['question', 'answer_text']  # Only question and answer_text are required
 )
+
+# writing_answer_request_schema = openapi.Schema(
+#     type=openapi.TYPE_OBJECT,
+#     properties={
+#         'question': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+#             'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID')
+#         }),
+#         'user': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+#             'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='User ID')
+#         }),
+#         'answer_text': openapi.Schema(type=openapi.TYPE_STRING, description='Written answer text'),
+#         'submitted_at': openapi.Schema(type=openapi.TYPE_STRING, description='Timestamp of answer submission')
+#     }
+# )
 
 # Group Views (POST and UPDATE)
 class GroupCreateView(APIView):
@@ -1795,6 +1849,22 @@ class QuestionUpdateView(APIView):
 #             return Response(serializer.data, status=status.HTTP_200_OK)
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+# class QuestionListView(APIView):
+#     def get(self, request, *args, **kwargs):
+#         questions = api_models.Question.objects.all()
+#         serializer = QuestionSerializer(questions, many=True)
+#         return Response(serializer.data, status=status.HTTP_200_OK)
+
+# class QuestionDetailView(APIView):
+#     def get(self, request, *args, **kwargs):
+#         try:
+#             question = api_models.Question.objects.get(id=kwargs['pk'])
+#         except api_models.Question.DoesNotExist:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+#         serializer = QuestionSerializer(question)
+#         return Response(serializer.data, status=status.HTTP_200_OK)
+
 class QuestionListView(APIView):
     def get(self, request, *args, **kwargs):
         questions = api_models.Question.objects.all()
@@ -1829,16 +1899,32 @@ class WritingAnswerListView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 # Writing Answer Views (POST and UPDATE)
+# class WritingAnswerCreateView(APIView):
+#     @swagger_auto_schema(request_body=writing_answer_request_schema)
+#     def post(self, request, *args, **kwargs):
+#         serializer = WritingAnswerSerializer(data=request.data)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_201_CREATED)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class WritingAnswerCreateView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+
     @swagger_auto_schema(request_body=writing_answer_request_schema)
     def post(self, request, *args, **kwargs):
-        serializer = WritingAnswerSerializer(data=request.data)
+        serializer = WritingAnswerSerializer(
+            data=request.data,
+            context={'request': request}  # Pass request to serializer context
+        )
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
 class WritingAnswerUpdateView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+
     @swagger_auto_schema(request_body=writing_answer_request_schema)
     def put(self, request, *args, **kwargs):
         try:
@@ -1846,11 +1932,30 @@ class WritingAnswerUpdateView(APIView):
         except api_models.WritingAnswer.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = WritingAnswerSerializer(writing_answer, data=request.data, partial=True)
+        serializer = WritingAnswerSerializer(
+            writing_answer,
+            data=request.data,
+            partial=True,
+            context={'request': request}  # Pass request to serializer context
+        )
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+# class WritingAnswerUpdateView(APIView):
+#     @swagger_auto_schema(request_body=writing_answer_request_schema)
+#     def put(self, request, *args, **kwargs):
+#         try:
+#             writing_answer = api_models.WritingAnswer.objects.get(id=kwargs['pk'])
+#         except api_models.WritingAnswer.DoesNotExist:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+#         serializer = WritingAnswerSerializer(writing_answer, data=request.data, partial=True)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_200_OK)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
 
@@ -1875,20 +1980,64 @@ class WritingAnswerDeleteView(APIView):
         writing_answer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+class WritingAnswersByUserView(APIView):
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description="ID of the user to fetch writing answers for",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: WritingAnswerSerializer(many=True),
+            404: "User not found or no answers available"
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        try:
+            # Check if the user exists (optional)
+            user = api_models.User.objects.get(id=user_id)
+        except api_models.User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch all writing answers for the user
+        writing_answers = api_models.WritingAnswer.objects.filter(user=user)
+        if not writing_answers.exists():
+            return Response({"detail": "No writing answers found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = WritingAnswerSerializer(writing_answers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+# class MCQAnswerCreateView(APIView):
+#     @swagger_auto_schema(request_body=api_serializer.MCQAnswerSerializer(many=True))
+#     def post(self, request, *args, **kwargs):
+#         serializer = api_serializer.MCQAnswerSerializer(data=request.data, many=True)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_201_CREATED)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class MCQAnswerCreateView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+
     @swagger_auto_schema(request_body=api_serializer.MCQAnswerSerializer(many=True))
     def post(self, request, *args, **kwargs):
-        serializer = api_serializer.MCQAnswerSerializer(data=request.data, many=True)
+        serializer = api_serializer.MCQAnswerSerializer(
+            data=request.data, 
+            many=True, 
+            context={'request': request}  # Pass request to serializer context
+        )
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-
-
 class MCQAnswerUpdateView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+
     @swagger_auto_schema(request_body=api_serializer.MCQAnswerSerializer)
     def put(self, request, *args, **kwargs):
         try:
@@ -1896,11 +2045,30 @@ class MCQAnswerUpdateView(APIView):
         except api_models.MCQAnswer.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = api_serializer.MCQAnswerSerializer(mcq_answer, data=request.data, partial=True)
+        serializer = api_serializer.MCQAnswerSerializer(
+            mcq_answer, 
+            data=request.data, 
+            partial=True, 
+            context={'request': request}  # Pass request to serializer context
+        )
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# class MCQAnswerUpdateView(APIView):
+#     @swagger_auto_schema(request_body=api_serializer.MCQAnswerSerializer)
+#     def put(self, request, *args, **kwargs):
+#         try:
+#             mcq_answer = api_models.MCQAnswer.objects.get(id=kwargs['pk'])
+#         except api_models.MCQAnswer.DoesNotExist:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+#         serializer = api_serializer.MCQAnswerSerializer(mcq_answer, data=request.data, partial=True)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_200_OK)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class MCQAnswerListView(APIView):
@@ -1930,6 +2098,229 @@ class MCQAnswerDeleteView(APIView):
         mcq_answer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+class StandardPagination(PageNumberPagination):
+    page_size = 10  # Default number of items per page
+    page_size_query_param = 'page_size'  # Allow client to override page size
+    max_page_size = 100  # Maximum allowed page size
+    
+
+class MCQAnswersByUserView(APIView):
+    permission_classes = [IsAuthenticated]  # Require authentication
+    pagination_class = StandardPagination  # Use custom pagination
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description="ID of the user to fetch MCQ answers for",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                description="Page number",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                description="Number of items per page",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: api_serializer.MCQAnswerSerializer(many=True),
+            403: "You can only view your own answers",
+            404: "User not found or no answers available"
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        # Check if the authenticated user matches the requested user_id
+        if request.user.id != user_id:
+            return Response(
+                {"detail": "You can only view your own answers."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            # Check if the user exists
+            user = api_models.User.objects.get(id=user_id)
+        except api_models.User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch all MCQ answers for the user
+        mcq_answers = api_models.MCQAnswer.objects.filter(user=user)
+        if not mcq_answers.exists():
+            return Response({"detail": "No MCQ answers found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(mcq_answers, request)
+        serializer = api_serializer.MCQAnswerSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+class WritingAnswersByUserView(APIView):
+    permission_classes = [IsAuthenticated]  # Require authentication
+    pagination_class = StandardPagination  # Use custom pagination
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description="ID of the user to fetch writing answers for",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                description="Page number",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                description="Number of items per page",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: WritingAnswerSerializer(many=True),
+            403: "You can only view your own answers",
+            404: "User not found or no answers available"
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        # Check if the authenticated user matches the requested user_id
+        if request.user.id != user_id:
+            return Response(
+                {"detail": "You can only view your own answers."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            # Check if the user exists
+            user = api_models.User.objects.get(id=user_id)
+        except api_models.User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch all writing answers for the user
+        writing_answers = api_models.WritingAnswer.objects.filter(user=user)
+        if not writing_answers.exists():
+            return Response({"detail": "No writing answers found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(writing_answers, request)
+        serializer = WritingAnswerSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    
+class NonAuthenTicateMCQAnswersByUserView(APIView):
+    pagination_class = StandardPagination  # Use custom pagination
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description="ID of the user to fetch MCQ answers for",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                description="Page number",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                description="Number of items per page",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: api_serializer.MCQAnswerSerializer(many=True),
+            404: "User not found or no answers available"
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        try:
+            # Check if the user exists
+            user = api_models.User.objects.get(id=user_id)
+        except api_models.User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch all MCQ answers for the user
+        mcq_answers = api_models.MCQAnswer.objects.filter(user=user)
+        if not mcq_answers.exists():
+            return Response({"detail": "No MCQ answers found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(mcq_answers, request)
+        serializer = api_serializer.MCQAnswerSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+class NonAuthenTicateWritingAnswersByUserView(APIView):
+    pagination_class = StandardPagination  # Use custom pagination
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description="ID of the user to fetch writing answers for",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                description="Page number",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                description="Number of items per page",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: WritingAnswerSerializer(many=True),
+            404: "User not found or no answers available"
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        try:
+            # Check if the user exists
+            user = api_models.User.objects.get(id=user_id)
+        except api_models.User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch all writing answers for the user
+        writing_answers = api_models.WritingAnswer.objects.filter(user=user)
+        if not writing_answers.exists():
+            return Response({"detail": "No writing answers found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(writing_answers, request)
+        serializer = WritingAnswerSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 class AnswerCountView(APIView):
     def get(self, request, *args, **kwargs):
@@ -1984,51 +2375,51 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 # Custom permission class (unchanged)
-class IsAdminUser(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.can_login_as_admin())
+# class IsAdminUser(permissions.BasePermission):
+#     def has_permission(self, request, view):
+#         return bool(request.user and request.user.can_login_as_admin())
 
-class AdminView(APIView):
-    serializer_class = api_serializer.AdminSerializer
+# class AdminView(APIView):
+#     serializer_class = api_serializer.AdminSerializer
 
-    def post(self, request):
-        # Validate request data
-        login_serializer = api_serializer.AdminLoginSerializer(data=request.data)
-        if not login_serializer.is_valid():
-            return Response({
-                "error": login_serializer.errors
-            }, status=status.HTTP_400_BAD_REQUEST)
+#     def post(self, request):
+#         # Validate request data
+#         login_serializer = api_serializer.AdminLoginSerializer(data=request.data)
+#         if not login_serializer.is_valid():
+#             return Response({
+#                 "error": login_serializer.errors
+#             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get email and password from request
-        email = login_serializer.validated_data['email']
-        password = login_serializer.validated_data['password']
+#         # Get email and password from request
+#         email = login_serializer.validated_data['email']
+#         password = login_serializer.validated_data['password']
 
-        # Authenticate user
-        user = authenticate(request=request, email=email, password=password)
+#         # Authenticate user
+#         user = authenticate(request=request, email=email, password=password)
         
-        if user is None:
-            return Response({
-                "error": "Invalid email or password"
-            }, status=status.HTTP_401_UNAUTHORIZED)
+#         if user is None:
+#             return Response({
+#                 "error": "Invalid email or password"
+#             }, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Check if user can login as admin
-        if not user.can_login_as_admin():
-            return Response({
-                "error": "User is not authorized as admin"
-            }, status=status.HTTP_403_FORBIDDEN)
+#         # Check if user can login as admin
+#         if not user.can_login_as_admin():
+#             return Response({
+#                 "error": "User is not authorized as admin"
+#             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Generate tokens using Simple JWT
-        refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
+#         # Generate tokens using Simple JWT
+#         refresh = RefreshToken.for_user(user)
+#         access_token = str(refresh.access_token)
 
-        # Serialize user data
-        serializer = self.serializer_class(user)
-        return Response({
-            "message": "Welcome Admin",
-            "user": serializer.data,
-            "access_token": access_token,
-            "refresh_token": str(refresh)
-        }, status=status.HTTP_200_OK)
+#         # Serialize user data
+#         serializer = self.serializer_class(user)
+#         return Response({
+#             "message": "Welcome Admin",
+#             "user": serializer.data,
+#             "access_token": access_token,
+#             "refresh_token": str(refresh)
+#         }, status=status.HTTP_200_OK)
 
 
 class GroupQuizDetailsView(APIView):
@@ -2119,44 +2510,3 @@ class GroupQuizByQuestionTypeView(APIView):
 
         return Response(data, status=status.HTTP_200_OK)
     
-# # Custom permission class (unchanged)
-# class IsAdminUser(permissions.BasePermission):
-#     def has_permission(self, request, view):
-#         return bool(request.user and request.user.can_login_as_admin())
-
-# class AdminView(APIView):
-#     # We'll handle authentication in the view itself, so no permission_classes needed
-#     serializer_class = api_serializer.AdminSerializer
-
-#     def post(self, request):  # Changed to POST to accept email/password in body
-#         # Validate request data
-#         login_serializer = api_serializer.AdminLoginSerializer(data=request.data)
-#         if not login_serializer.is_valid():
-#             return Response({
-#                 "error": login_serializer.errors
-#             }, status=status.HTTP_400_BAD_REQUEST)
-
-#         # Get email and password from request
-#         email = login_serializer.validated_data['email']
-#         password = login_serializer.validated_data['password']
-
-#         # Authenticate user
-#         user = authenticate(request=request, email=email, password=password)
-        
-#         if user is None:
-#             return Response({
-#                 "error": "Invalid email or password"
-#             }, status=status.HTTP_401_UNAUTHORIZED)
-
-#         # Check if user can login as admin
-#         if not user.can_login_as_admin():
-#             return Response({
-#                 "error": "User is not authorized as admin"
-#             }, status=status.HTTP_403_FORBIDDEN)
-
-#         # Serialize user data and return success response
-#         serializer = self.serializer_class(user)
-#         return Response({
-#             "message": "Welcome Admin",
-#             "user": serializer.data
-#         }, status=status.HTTP_200_OK)

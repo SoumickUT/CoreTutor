@@ -7,11 +7,65 @@ from rest_framework.exceptions import ValidationError
 
 from userauths.models import Profile, User
 
+# class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+#     @classmethod
+#     def get_token(cls, user):
+#         token = super().get_token(user)
+
+#         token['full_name'] = user.full_name
+#         token['email'] = user.email
+#         token['username'] = user.username
+#         try:
+#             token['teacher_id'] = user.teacher.id
+#         except:
+#             token['teacher_id'] = 0
+
+
+#         return token
+
+# class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
+#     @classmethod
+#     def get_token(cls, user):
+#         token = super().get_token(user)
+
+#         token['full_name'] = user.full_name
+#         token['email'] = user.email
+#         token['username'] = user.username
+#         try:
+#             token['teacher_id'] = user.teacher.id
+#         except:
+#             token['teacher_id'] = 0
+            
+#         # Add admin status if both is_superuser and is_staff are True
+#         if user.is_superuser and user.is_staff:
+#             token['is_admin'] = True
+#         else:
+#             token['is_admin'] = False
+
+#         return token
+
+
+# class AdminSerializer(serializers.ModelSerializer):
+#     can_login_as_admin = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = User
+#         fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
+#         read_only_fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
+
+#     def get_can_login_as_admin(self, obj):
+#         return obj.can_login_as_admin()
+
+# class AdminLoginSerializer(serializers.Serializer):
+#     email = serializers.EmailField()
+#     password = serializers.CharField(write_only=True)
+
+#=======================03-09-205======================
+# Serializers
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-
         token['full_name'] = user.full_name
         token['email'] = user.email
         token['username'] = user.username
@@ -19,15 +73,12 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             token['teacher_id'] = user.teacher.id
         except:
             token['teacher_id'] = 0
-
-
         return token
 
 class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-
         token['full_name'] = user.full_name
         token['email'] = user.email
         token['username'] = user.username
@@ -35,31 +86,24 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
             token['teacher_id'] = user.teacher.id
         except:
             token['teacher_id'] = 0
-            
-        # Add admin status if both is_superuser and is_staff are True
-        if user.is_superuser and user.is_staff:
-            token['is_admin'] = True
-        else:
-            token['is_admin'] = False
-
+        token['is_admin'] = user.is_superuser and user.is_staff
         return token
-
 
 class AdminSerializer(serializers.ModelSerializer):
     can_login_as_admin = serializers.SerializerMethodField()
 
     class Meta:
-        model = User
+        model = User  # Adjust if using a custom User model
         fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
         read_only_fields = ['id', 'email', 'username', 'full_name', 'can_login_as_admin']
 
     def get_can_login_as_admin(self, obj):
-        return obj.can_login_as_admin()
+        return obj.is_superuser and obj.is_staff  # Adjust logic as needed
 
 class AdminLoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
-
+#=======================================================
     
 # class RegisterSerializer(serializers.ModelSerializer):
 #     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -486,18 +530,19 @@ class AnswerSerializer(serializers.ModelSerializer):
 #         fields = ['answer_text', 'is_right']
 
 ############# 03/06/2025#################
+
 class QuestionSerializer(serializers.ModelSerializer):
     quiz = NestedPrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())
     answers = AnswerSerializer(many=True)
-
     question_type = serializers.ChoiceField(
         choices=api_models.Question.QUIZ_TYPES,
         help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
     )
+    group_id = serializers.IntegerField(source='quiz.group.id', read_only=True)  # Add group_id
 
     class Meta:
         model = api_models.Question
-        fields = ['id', 'title', 'quiz', 'question_type', 'answers']
+        fields = ['id', 'title', 'quiz', 'group_id', 'question_type', 'answers']
 
     def create(self, validated_data):
         answers_data = validated_data.pop('answers')
@@ -542,6 +587,8 @@ class QuestionSerializer(serializers.ModelSerializer):
                     answer.delete()
 
         return instance
+    
+###########################################
 
 # class QuestionSerializer(serializers.ModelSerializer):
 #     quiz = NestedPrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())
@@ -599,6 +646,14 @@ class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
             return super().to_internal_value(data.get('id'))
         return super().to_internal_value(data)
         
+# class WritingAnswerSerializer(serializers.ModelSerializer):
+#     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+#     user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
+
+#     class Meta:
+#         model = api_models.WritingAnswer
+#         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
+
 class WritingAnswerSerializer(serializers.ModelSerializer):
     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
     user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
@@ -606,7 +661,24 @@ class WritingAnswerSerializer(serializers.ModelSerializer):
     class Meta:
         model = api_models.WritingAnswer
         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
+        read_only_fields = ['user', 'submitted_at']  # User and submitted_at are read-only
 
+    def create(self, validated_data):
+        # Automatically set the user from the token
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Ensure user field cannot be modified during update
+        validated_data.pop('user', None)  # Ignore any user data in request
+        return super().update(instance, validated_data)
+
+    def validate(self, data):
+        # Optional: Ensure the authenticated user matches the instance's user (for updates)
+        request = self.context.get('request')
+        if request and self.instance and self.instance.user != request.user:
+            raise serializers.ValidationError("You can only update your own answers.")
+        return data
         
 class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
@@ -614,17 +686,57 @@ class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
             return super().to_internal_value(data.get('id'))
         return super().to_internal_value(data)
 
+# class MCQAnswerSerializer(serializers.ModelSerializer):
+#     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+#     user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
+#     selected_answer = NestedPrimaryKeyRelatedField(queryset=api_models.Answer.objects.all())
+
+#     class Meta:
+#         model = api_models.MCQAnswer
+#         fields = ['id', 'question', 'user', 'selected_answer', 'submitted_at']
+
+####################03-09-2025###############
+
+
+# class MCQAnswerSerializer(serializers.ModelSerializer):
+#     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+#     selected_answer = NestedPrimaryKeyRelatedField(queryset=api_models.Answer.objects.all())
+
+#     class Meta:
+#         model = api_models.MCQAnswer
+#         fields = ['id', 'question', 'user', 'selected_answer', 'submitted_at']
+#         read_only_fields = ['user', 'submitted_at']  # Make user read-only
+
+#     def create(self, validated_data):
+#         # Automatically set the user from the request
+#         validated_data['user'] = self.context['request'].user
+#         return super().create(validated_data)
+        
 class MCQAnswerSerializer(serializers.ModelSerializer):
     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
-    user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
     selected_answer = NestedPrimaryKeyRelatedField(queryset=api_models.Answer.objects.all())
 
     class Meta:
         model = api_models.MCQAnswer
         fields = ['id', 'question', 'user', 'selected_answer', 'submitted_at']
+        read_only_fields = ['user', 'submitted_at']  # User and submitted_at are read-only
 
+    def create(self, validated_data):
+        # For create: Set user from token
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
 
-        
+    def update(self, instance, validated_data):
+        # For update: Ensure user remains unchanged (from the original instance)
+        validated_data.pop('user', None)  # Ignore any user data in request
+        return super().update(instance, validated_data)
+
+    def validate(self, data):
+        # Optional: Ensure the authenticated user matches the instance's user (for security)
+        request = self.context.get('request')
+        if request and self.instance and self.instance.user != request.user:
+            raise serializers.ValidationError("You can only update your own answers.")
+        return data
 
 class CreateTeacherSerializer(serializers.ModelSerializer):
     class Meta:
