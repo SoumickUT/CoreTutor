@@ -309,3 +309,10 @@ SIMPLE_JWT = {
 
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost',
+    'http://localhost:*',  # Matches all ports on localhost
+    'http://127.0.0.1',
+    'http://127.0.0.1:*',  # Matches all ports on 127.0.0.1
+]

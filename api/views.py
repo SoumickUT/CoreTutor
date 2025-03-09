@@ -1522,6 +1522,7 @@ class WritingAnswerFilteredListView(APIView):
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class TeacherListCreateView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     """
     Handles GET requests to list all teachers and POST requests to create a new teacher.
     """
@@ -1548,6 +1549,7 @@ class TeacherListCreateView(APIView):
 
 
 class TeacherDetailView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     """
     Handles GET, PUT, and DELETE requests for a specific teacher.
     """
