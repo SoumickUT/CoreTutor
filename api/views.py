@@ -1584,6 +1584,7 @@ class TeacherDetailView(APIView):
 
 
 class UserListView(generics.ListAPIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     queryset = User.objects.all()
     serializer_class = api_serializer.UserSerializer
     # permission_classes = [IsAuthenticated]

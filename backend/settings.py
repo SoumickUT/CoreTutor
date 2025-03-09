@@ -125,7 +125,7 @@ DATABASES = {
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'mssql',
-#         'NAME': 'CoreTutor',
+#         'NAME': 'CoreTutorDB',
 #         'USER': '',
 #         'PASSWORD': '',
 #         'HOST': 'DESKTOP-RE9685A\\SQLEXPRESS',  # or use the IP address if you prefer
@@ -136,6 +136,23 @@ DATABASES = {
 #         },
 #     }
 # }
+
+# Define the connection string
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'mssql',
+#         'NAME': 'CoreTutorDB',
+#         'USER': 'coretutor_user',
+#         'PASSWORD': 'Co*tUt$R',
+#         'HOST': '185.4.176.50,5672',  # or use the IP address if you prefer
+#         'PORT': '',  # default port
+#         'OPTIONS': {
+#             'driver': 'ODBC Driver 17 for SQL Server',  # ODBC driver name
+#             'extra_params': 'TrustServerCertificate=yes;',
+#         },
+#     }
+# }
+
 
 #ALTER TABLE token_blacklist_blacklistedtoken
 #DROP CONSTRAINT UQ__token_bl__CB3C9E16AB5E6BA2;
@@ -259,7 +276,7 @@ JAZZMIN_UI_TWEAKS = {
 
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1440),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=50),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -286,7 +303,7 @@ SIMPLE_JWT = {
     'JTI_CLAIM': 'jti',
 
     'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=1440),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
