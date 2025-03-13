@@ -1181,6 +1181,7 @@ class TeacherNotificationDetailAPIView(generics.RetrieveUpdateAPIView):
         return api_models.Notification.objects.get(teacher=teacher, id=noti_id)
     
 class CourseCreateAPIView(generics.CreateAPIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     querysect = api_models.Course.objects.all()
     serializer_class = api_serializer.CourseSerializer
     permisscion_classes = [AllowAny]
@@ -1586,7 +1587,7 @@ class TeacherDetailView(APIView):
 
 
 class UserListView(generics.ListAPIView):
-    permission_classes = [AllowAny]  # Allow unauthenticated access
+    # permission_classes = [AllowAny]  # Allow unauthenticated access
     queryset = User.objects.all()
     serializer_class = api_serializer.UserSerializer
     # permission_classes = [IsAuthenticated]
@@ -1676,6 +1677,7 @@ writing_answer_request_schema = openapi.Schema(
 
 # Group Views (POST and UPDATE)
 class GroupCreateView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     @swagger_auto_schema(request_body=group_request_schema)
     def post(self, request, *args, **kwargs):
         serializer = GroupSerializer(data=request.data)
@@ -1727,6 +1729,7 @@ class GroupDeleteView(APIView):
 
 # Quiz Views (POST and UPDATE)
 class QuizCreateView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     @swagger_auto_schema(request_body=quiz_request_schema)
     def post(self, request, *args, **kwargs):
         if isinstance(request.data, list):
@@ -1755,6 +1758,7 @@ class QuizUpdateView(APIView):
 
 # Question Views (POST and UPDATE)
 class QuestionCreateView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated access
     @swagger_auto_schema(request_body=question_request_schema)
     def post(self, request, *args, **kwargs):
         # Check if the input data is a list
