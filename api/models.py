@@ -520,3 +520,38 @@ class MCQAnswer(models.Model):
 
     def __str__(self):
         return f"MCQ Answer by {self.user} for {self.question.title}"
+
+
+class WritingAnswerReview(models.Model):
+    """
+    Model representing a teacher review for a writing answer.
+    """
+    STATUS_CHOICES = [
+        ('CREATED', 'Created'),
+        ('ANSWERED', 'Answered'),
+        ('CHECKED', 'Checked'),
+    ]
+
+    writing_answer = models.OneToOneField(
+        WritingAnswer, 
+        on_delete=models.CASCADE, 
+        related_name="review"
+    )
+    teacher = models.ForeignKey(
+        Teacher, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name="reviews"
+    )
+    availability_status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default='CREATED',
+        help_text="Status of the answer: CREATED, ANSWERED, or CHECKED."
+    )
+    remarks = models.TextField(null=True, blank=True)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    date_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Review for {self.writing_answer} by {self.teacher}"

@@ -1917,25 +1917,92 @@ class WritingAnswerListView(APIView):
 #             return Response(serializer.data, status=status.HTTP_201_CREATED)
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class WritingAnswerCreateView(APIView):
-    # permission_classes = [IsAuthenticated]  # Ensure user is 
-    permission_classes = [AllowAny]
+# class WritingAnswerCreateView(APIView):
+#     permission_classes = [IsAuthenticated]  # Ensure user is 
+#     # permission_classes = [AllowAny]
 
+
+#     @swagger_auto_schema(request_body=writing_answer_request_schema)
+#     def post(self, request, *args, **kwargs):
+#         serializer = WritingAnswerSerializer(
+#             data=request.data,
+#             context={'request': request}  # Pass request to serializer context
+#         )
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_201_CREATED)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+writing_answer_request_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'question': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID')
+            },
+            required=['id']
+        ),
+        'answer_text': openapi.Schema(type=openapi.TYPE_STRING, description='Written answer text'),
+    },
+    required=['question', 'answer_text']
+)
+
+class WritingAnswerCreateView(APIView):
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(request_body=writing_answer_request_schema)
     def post(self, request, *args, **kwargs):
         serializer = WritingAnswerSerializer(
             data=request.data,
-            context={'request': request}  # Pass request to serializer context
+            context={'request': request}
         )
         if serializer.is_valid():
-            serializer.save()
+            # Save the WritingAnswer
+            writing_answer = serializer.save()
+            
+            # Automatically create a WritingAnswerReview with status 'ANSWERED'
+            api_models.WritingAnswerReview.objects.create(
+                writing_answer=writing_answer,
+                availability_status='ANSWERED'
+            )
+            
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# writing_answer_request_schema = openapi.Schema(
+#     type=openapi.TYPE_OBJECT,
+#     properties={
+#         'question': openapi.Schema(
+#             type=openapi.TYPE_OBJECT,
+#             properties={
+#                 'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID')
+#             },
+#             required=['id']
+#         ),
+#         'answer_text': openapi.Schema(type=openapi.TYPE_STRING, description='Written answer text'),
+#     },
+#     required=['question', 'answer_text']
+# )
+
+# class WritingAnswerCreateView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     @swagger_auto_schema(request_body=writing_answer_request_schema)
+#     def post(self, request, *args, **kwargs):
+#         serializer = WritingAnswerSerializer(
+#             data=request.data,
+#             context={'request': request}
+#         )
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_201_CREATED)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class WritingAnswerUpdateView(APIView):
-    # permission_classes = [IsAuthenticated]  # Ensure user is authenticated
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+    # permission_classes = [AllowAny]
 
 
     @swagger_auto_schema(request_body=writing_answer_request_schema)
@@ -2529,3 +2596,143 @@ class GroupQuizByQuestionTypeView(APIView):
 
         return Response(data, status=status.HTTP_200_OK)
     
+
+# class WritingAnswerReviewListView(APIView):
+#     # permission_classes = [IsAdminUser]
+#     permission_classes = [AllowAny]
+    
+#     def get(self, request, *args, **kwargs):
+#         reviews = api_models.WritingAnswerReview.objects.all()
+#         serializer = api_serializer.WritingAnswerReviewSerializer(reviews, many=True)
+#         return Response(serializer.data, status=status.HTTP_200_OK)
+  
+class WritingAnswerReviewListView(APIView):
+    # permission_classes = [IsAdminUser]
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        reviews = api_models.WritingAnswerReview.objects.all()
+        serializer = api_serializer.WritingAnswerReviewSerializer(reviews, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)  
+
+# Define the request schema
+writing_answer_review_update_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'availability_status': openapi.Schema(
+            type=openapi.TYPE_STRING,
+            enum=['CREATED', 'ANSWERED', 'CHECKED'],
+            description='Status of the writing answer review',
+            default='CREATED'
+        ),
+        'remarks': openapi.Schema(
+            type=openapi.TYPE_STRING,
+            description='Teacher remarks on the answer (required if status is CHECKED)',
+            nullable=True
+        ),
+        'checked_at': openapi.Schema(
+            type=openapi.TYPE_STRING,
+            format=openapi.FORMAT_DATETIME,
+            description='Timestamp when the answer was checked (required if status is CHECKED)',
+            nullable=True,
+            example='2025-03-29T15:00:00Z'
+        ),
+        'teacher': openapi.Schema(
+            type=openapi.TYPE_STRING,
+            description='ID of the teacher reviewing the answer',
+            nullable=True
+        ),
+    },
+    required=[]  # No fields are strictly required for PATCH (partial update)
+)
+
+# Define the response schema (reusing the full response structure)
+writing_answer_review_response_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'id': openapi.Schema(type=openapi.TYPE_STRING, description='Unique ID of the review'),
+        'question': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'question_id': openapi.Schema(type=openapi.TYPE_STRING),
+                'title': openapi.Schema(type=openapi.TYPE_STRING),
+                'question_type': openapi.Schema(type=openapi.TYPE_STRING, enum=['MCQ', 'WRITING']),
+                'quiz_id': openapi.Schema(type=openapi.TYPE_STRING),
+            }
+        ),
+        'user': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'user_id': openapi.Schema(type=openapi.TYPE_STRING),
+                'username': openapi.Schema(type=openapi.TYPE_STRING),
+            }
+        ),
+        'answer_details': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                'submitted_at': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+                'availability_status': openapi.Schema(type=openapi.TYPE_STRING, enum=['CREATED', 'ANSWERED', 'CHECKED']),
+                'question_answers': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'id': openapi.Schema(type=openapi.TYPE_STRING),
+                            'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                            'is_right': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        }
+                    )
+                ),
+            }
+        ),
+        'teacher_review': openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'remarks': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                'checked_by': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                'checked_at': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME, nullable=True),
+            }
+        ),
+        'date_updated': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+    }
+)
+
+# Update View with Schema
+class WritingAnswerReviewUpdateView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        request_body=writing_answer_review_update_schema,
+        responses={
+            200: writing_answer_review_response_schema,
+            400: openapi.Response('Bad Request', openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )),
+            404: openapi.Response('Not Found', openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            ))
+        },
+        operation_description="Update a WritingAnswerReview instance partially."
+    )
+    def patch(self, request, review_id, *args, **kwargs):
+        try:
+            review = api_models.WritingAnswerReview.objects.get(id=review_id)
+        except api_models.WritingAnswerReview.DoesNotExist:
+            return Response(
+                {"error": "WritingAnswerReview not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = api_serializer.WritingAnswerReviewUpdateSerializer(
+            review, 
+            data=request.data, 
+            partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            updated_serializer = api_serializer.WritingAnswerReviewSerializer(review)
+            return Response(updated_serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

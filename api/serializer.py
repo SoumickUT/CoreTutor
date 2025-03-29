@@ -654,32 +654,85 @@ class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
 #         model = api_models.WritingAnswer
 #         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
 
+# class WritingAnswerSerializer(serializers.ModelSerializer):
+#     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+#     user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
+
+#     class Meta:
+#         model = api_models.WritingAnswer
+#         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
+#         read_only_fields = ['user', 'submitted_at']  # User and submitted_at are read-only
+
+#     def create(self, validated_data):
+#         # Automatically set the user from the token
+#         validated_data['user'] = self.context['request'].user
+#         return super().create(validated_data)
+
+#     def update(self, instance, validated_data):
+#         # Ensure user field cannot be modified during update
+#         validated_data.pop('user', None)  # Ignore any user data in request
+#         return super().update(instance, validated_data)
+
+#     def validate(self, data):
+#         # Optional: Ensure the authenticated user matches the instance's user (for updates)
+#         request = self.context.get('request')
+#         if request and self.instance and self.instance.user != request.user:
+#             raise serializers.ValidationError("You can only update your own answers.")
+#         return data
+
+
+########################### Working ###################
+
+# class WritingAnswerSerializer(serializers.ModelSerializer):
+#     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
+#     # Remove queryset from user since it's read-only
+#     user = serializers.PrimaryKeyRelatedField(read_only=True)  # Simplified to standard DRF field
+
+#     class Meta:
+#         model = api_models.WritingAnswer
+#         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
+#         read_only_fields = ['user', 'submitted_at']  # User and submitted_at are set automatically
+
+#     def create(self, validated_data):
+#         # Automatically set the user from the token
+#         validated_data['user'] = self.context['request'].user
+#         return super().create(validated_data)
+
+#     def update(self, instance, validated_data):
+#         # Ensure user field cannot be modified during update
+#         validated_data.pop('user', None)  # Ignore any user data in request
+#         return super().update(instance, validated_data)
+
+#     def validate(self, data):
+#         # Optional: Ensure the authenticated user matches the instance's user (for updates)
+#         request = self.context.get('request')
+#         if request and self.instance and self.instance.user != request.user:
+#             raise serializers.ValidationError("You can only update your own answers.")
+#         return data
+        
 class WritingAnswerSerializer(serializers.ModelSerializer):
     question = NestedPrimaryKeyRelatedField(queryset=api_models.Question.objects.all())
-    user = NestedPrimaryKeyRelatedField(queryset=api_models.User.objects.all())
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = api_models.WritingAnswer
         fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
-        read_only_fields = ['user', 'submitted_at']  # User and submitted_at are read-only
+        read_only_fields = ['user', 'submitted_at']
 
     def create(self, validated_data):
-        # Automatically set the user from the token
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        # Ensure user field cannot be modified during update
-        validated_data.pop('user', None)  # Ignore any user data in request
+        validated_data.pop('user', None)
         return super().update(instance, validated_data)
 
     def validate(self, data):
-        # Optional: Ensure the authenticated user matches the instance's user (for updates)
         request = self.context.get('request')
         if request and self.instance and self.instance.user != request.user:
             raise serializers.ValidationError("You can only update your own answers.")
         return data
-        
+    
 class NestedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
         if isinstance(data, dict):
@@ -797,3 +850,90 @@ class GroupDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = api_models.Group
         fields = ['id', 'name', 'quizzes']
+        
+
+# Existing serializers (unchanged, just for reference)
+class QuestionAnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Answer
+        fields = ['id', 'answer_text', 'is_right']
+
+class TeacherProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Teacher
+        fields = ['id', 'full_name']
+
+class StudentWritingAnswerSerializer(serializers.ModelSerializer):
+    user = serializers.StringRelatedField(source='user.username')
+    question = serializers.StringRelatedField(source='question.title')
+    
+    class Meta:
+        model = api_models.WritingAnswer
+        fields = ['id', 'question', 'user', 'answer_text', 'submitted_at']
+
+# New serializer for updating WritingAnswerReview
+class WritingAnswerReviewUpdateSerializer(serializers.ModelSerializer):
+    teacher = serializers.PrimaryKeyRelatedField(queryset=api_models.Teacher.objects.all(), required=False)
+
+    class Meta:
+        model = api_models.WritingAnswerReview
+        fields = ['availability_status', 'remarks', 'checked_at', 'teacher']
+        extra_kwargs = {
+            'availability_status': {'required': False},
+            'remarks': {'required': False},
+            'checked_at': {'required': False},
+            'teacher': {'required': False},
+        }
+
+    def validate(self, data):
+        # Optional validation: If status is CHECKED, ensure remarks and checked_at are provided
+        if data.get('availability_status') == 'CHECKED':
+            if not data.get('remarks'):
+                raise serializers.ValidationError("Remarks are required when status is 'CHECKED'.")
+            if not data.get('checked_at'):
+                raise serializers.ValidationError("Checked_at is required when status is 'CHECKED'.")
+        return data
+
+# Main serializer (unchanged except for reference)
+class WritingAnswerReviewSerializer(serializers.ModelSerializer):
+    question = serializers.SerializerMethodField()
+    user = serializers.SerializerMethodField()
+    answer_details = serializers.SerializerMethodField()
+    teacher_review = serializers.SerializerMethodField()
+
+    class Meta:
+        model = api_models.WritingAnswerReview
+        fields = ['id', 'question', 'user', 'answer_details', 'teacher_review', 'date_updated']
+
+    def get_question(self, obj):
+        question = obj.writing_answer.question
+        return {
+            'question_id': question.id,
+            'title': question.title,
+            'question_type': question.question_type,
+            'quiz_id': question.quiz.id
+        }
+
+    def get_user(self, obj):
+        user = obj.writing_answer.user
+        return {
+            'user_id': user.id,
+            'username': user.username
+        }
+
+    def get_answer_details(self, obj):
+        writing_answer = obj.writing_answer
+        answers = api_models.Answer.objects.filter(question=writing_answer.question)
+        return {
+            'answer_text': writing_answer.answer_text,
+            'submitted_at': writing_answer.submitted_at,
+            'availability_status': obj.availability_status,
+            'question_answers': QuestionAnswerSerializer(answers, many=True).data
+        }
+
+    def get_teacher_review(self, obj):
+        return {
+            'remarks': obj.remarks,
+            'checked_by': obj.teacher.full_name if obj.teacher else None,
+            'checked_at': obj.checked_at
+        }

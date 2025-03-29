@@ -110,6 +110,8 @@ urlpatterns = [
     path('questions/<int:pk>/', api_views.QuestionDetailView.as_view(), name='question-detail'),
     path('questions/<int:pk>/update/', api_views.QuestionUpdateView.as_view(), name='question-update'),
     path('questions/<int:pk>/delete/', api_views.QuestionDeleteView.as_view(), name='question-delete'),
+    path('admin/writing-answer-reviews/', api_views.WritingAnswerReviewListView.as_view(), name='writing_answer_review_list'),
+    path('admin/writing-answer-reviews/<str:review_id>/update/', api_views.WritingAnswerReviewUpdateView.as_view(), name='writing_answer_review_update'),
 
     # Writing Answer URLs
     path('writing-answers/', api_views.WritingAnswerListView.as_view(), name='writing-answer-list'),
@@ -129,6 +131,7 @@ urlpatterns = [
     path('mcq-answers/<int:user_id>/', api_views.MCQAnswersByUserView.as_view(), name='mcq-answers-by-user'),
     path('mcq-answers/non_authen/<int:user_id>/', api_views.NonAuthenTicateMCQAnswersByUserView.as_view(), name='mcq-answers-by-non-athun-user'),
     path('answer-count/<int:question_id>/', api_views.AnswerCountView.as_view(), name='answer-count'),
+    
     
    
     
