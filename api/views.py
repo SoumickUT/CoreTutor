@@ -2280,6 +2280,8 @@ class NonAuthenTicateMCQAnswersByUserView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 class NonAuthenTicateWritingAnswersByUserView(APIView):
+    permission_classes = [AllowAny]
+
     pagination_class = StandardPagination  # Use custom pagination
 
     @swagger_auto_schema(
