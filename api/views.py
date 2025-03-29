@@ -1900,6 +1900,8 @@ class QuestionDeleteView(APIView):
 
 
 class WritingAnswerListView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request, *args, **kwargs):
         writing_answers = api_models.WritingAnswer.objects.all()
         serializer = WritingAnswerSerializer(writing_answers, many=True)
@@ -1916,7 +1918,9 @@ class WritingAnswerListView(APIView):
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class WritingAnswerCreateView(APIView):
-    permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+    # permission_classes = [IsAuthenticated]  # Ensure user is 
+    permission_classes = [AllowAny]
+
 
     @swagger_auto_schema(request_body=writing_answer_request_schema)
     def post(self, request, *args, **kwargs):
@@ -1930,7 +1934,9 @@ class WritingAnswerCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class WritingAnswerUpdateView(APIView):
-    permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+    # permission_classes = [IsAuthenticated]  # Ensure user is authenticated
+    permission_classes = [AllowAny]
+
 
     @swagger_auto_schema(request_body=writing_answer_request_schema)
     def put(self, request, *args, **kwargs):
@@ -1968,6 +1974,8 @@ class WritingAnswerUpdateView(APIView):
 
 
 class WritingAnswerDetailView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request, *args, **kwargs):
         try:
             writing_answer = api_models.WritingAnswer.objects.get(id=kwargs['pk'])
