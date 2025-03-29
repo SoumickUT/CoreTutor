@@ -2330,6 +2330,8 @@ class NonAuthenTicateWritingAnswersByUserView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 class AnswerCountView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request, *args, **kwargs):
         question_id = kwargs.get('question_id')
         try:
