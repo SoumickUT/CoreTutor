@@ -51,6 +51,10 @@ PAYPAL_SECRET_ID = settings.PAYPAL_SECRET_ID
 #     serializer_class = api_serializer.AdminTokenObtainPairSerializer
 
 # Token Views
+# class MyTokenObtainPairView(TokenObtainPairView):
+#     serializer_class = api_serializer.MyTokenObtainPairSerializer
+
+# Custom view using the serializer
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = api_serializer.MyTokenObtainPairSerializer
 
@@ -350,6 +354,14 @@ class CartListAPIView(generics.ListAPIView):
         queryset = api_models.Cart.objects.filter(cart_id=cart_id)
         return queryset
     
+class CartListByUserAPIView(generics.ListAPIView):
+    serializer_class = api_serializer.CartSerializer
+    permission_classes = [AllowAny]  # Adjust permissions as needed (e.g., IsAuthenticated)
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        queryset = api_models.Cart.objects.filter(user__id=user_id)
+        return queryset
 
 class CartItemDeleteAPIView(generics.DestroyAPIView):
     serializer_class = api_serializer.CartSerializer
@@ -401,6 +413,44 @@ class CartStatsAPIView(generics.RetrieveAPIView):
         return cart_item.total
     
 
+
+class CartStatsByUserAPIView(generics.RetrieveAPIView):
+    serializer_class = api_serializer.CartSerializer
+    permission_classes = [AllowAny]  # Adjust permissions as needed (e.g., IsAuthenticated)
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        queryset = api_models.Cart.objects.filter(user__id=user_id)
+        return queryset
+    
+    def get(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        total_price = 0.00
+        total_tax = 0.00
+        total_total = 0.00
+
+        for cart_item in queryset:
+            total_price += float(self.calculate_price(cart_item))
+            total_tax += float(self.calculate_tax(cart_item))
+            total_total += round(float(self.calculate_total(cart_item)), 2)
+
+        data = {
+            "price": total_price,
+            "tax": total_tax,
+            "total": total_total,
+        }
+
+        return Response(data)
+
+    def calculate_price(self, cart_item):
+        return cart_item.price
+    
+    def calculate_tax(self, cart_item):
+        return cart_item.tax_fee
+
+    def calculate_total(self, cart_item):
+        return cart_item.total
 
 
 class CreateOrderAPIView(generics.CreateAPIView):

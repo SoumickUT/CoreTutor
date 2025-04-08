@@ -30,7 +30,9 @@ urlpatterns = [
     path('course-detail/<slug:slug>/', api_views.CourseDetailAPIView.as_view(), name='course-detail'), ##Change this url 1-25-25
     path("course/cart/", api_views.CartAPIView.as_view()),
     path("course/cart-list/<cart_id>/", api_views.CartListAPIView.as_view()),
+    path("course/cart-list/<user_id>/", api_views.CartListByUserAPIView.as_view()),
     path("cart/stats/<cart_id>/", api_views.CartStatsAPIView.as_view()),
+    path("cart/stats/user/<int:user_id>/", api_views.CartStatsByUserAPIView.as_view(), name="cart_stats_by_user_id"),
     path("course/cart-item-delete/<cart_id>/<item_id>/", api_views.CartItemDeleteAPIView.as_view()),
     path("order/create-order/", api_views.CreateOrderAPIView.as_view()),
     path("order/checkout/<oid>/", api_views.CheckoutAPIView.as_view()),

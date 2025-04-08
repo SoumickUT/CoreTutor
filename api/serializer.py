@@ -62,10 +62,25 @@ from userauths.models import Profile, User
 
 #=======================03-09-205======================
 # Serializers
+# class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+#     @classmethod
+#     def get_token(cls, user):
+#         token = super().get_token(user)
+#         token['full_name'] = user.full_name
+#         token['email'] = user.email
+#         token['username'] = user.username
+#         try:
+#             token['teacher_id'] = user.teacher.id
+#         except:
+#             token['teacher_id'] = 0
+#         return token
+
+# Custom serializer for token response
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
+        # Add custom fields to the token payload
         token['full_name'] = user.full_name
         token['email'] = user.email
         token['username'] = user.username
@@ -74,6 +89,21 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         except:
             token['teacher_id'] = 0
         return token
+
+    # Override the validate method to customize the response
+    def validate(self, attrs):
+        # Call the parent validate method to get the default token data
+        data = super().validate(attrs)
+        
+        # Add additional user fields to the response
+        data['user'] = {
+            'id': self.user.id,
+            'email': self.user.email,
+            'username': self.user.username,
+            'full_name': self.user.full_name
+        }
+        
+        return data
 
 class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
