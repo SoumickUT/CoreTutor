@@ -30,7 +30,9 @@ urlpatterns = [
     path('course-detail/<slug:slug>/', api_views.CourseDetailAPIView.as_view(), name='course-detail'), ##Change this url 1-25-25
     path("course/cart/", api_views.CartAPIView.as_view()),
     path("course/cart-list/<cart_id>/", api_views.CartListAPIView.as_view()),
-    path("course/cart-list/<user_id>/", api_views.CartListByUserAPIView.as_view()),
+    path("course/cart-list/user/<user_id>/", api_views.CartListByUserAPIView.as_view()),
+    path("course/cart-list/update/user/<int:user_id>/", api_views.CartUpdateByUserAPIView.as_view(), name="cart_update_by_user_id"),
+    path("course/cart/update/<cart_id>/user/<int:user_id>/", api_views.CartUpdateByCartAndUserAPIView.as_view(), name="cart_update_by_cart_and_user_id"),
     path("cart/stats/<cart_id>/", api_views.CartStatsAPIView.as_view()),
     path("cart/stats/user/<int:user_id>/", api_views.CartStatsByUserAPIView.as_view(), name="cart_stats_by_user_id"),
     path("course/cart-item-delete/<cart_id>/<item_id>/", api_views.CartItemDeleteAPIView.as_view()),
@@ -53,6 +55,11 @@ urlpatterns = [
     path("student/wishlist/<user_id>/", api_views.StudentWishListListCreateAPIView.as_view()),
     path("student/question-answer-list-create/<course_id>/", api_views.QuestionAnswerListCreateAPIView.as_view()),
     path("student/question-answer-message-create/", api_views.QuestionAnswerMessageSendAPIView.as_view()),
+    
+    path('course/variants/', api_views.VariantListView.as_view(), name='variant-list'),
+    path('course/variants/<int:pk>/', api_views.VariantDetailView.as_view(), name='variant-detail'),
+    path('course/variant-items/', api_views.VariantItemListView.as_view(), name='variant-item-list'),
+    path('course/variant-items/<int:pk>/', api_views.VariantItemDetailView.as_view(), name='variant-item-detail'),
 
 
     # Teacher Routes

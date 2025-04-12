@@ -26,6 +26,8 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView  # Import APIView
 from drf_yasg.utils import swagger_auto_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 import random
 from drf_yasg import openapi
 from decimal import Decimal
@@ -37,6 +39,7 @@ from rest_framework.exceptions import NotFound
 from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, QuestionSerializer, WritingAnswerSerializer
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
@@ -356,12 +359,563 @@ class CartListAPIView(generics.ListAPIView):
     
 class CartListByUserAPIView(generics.ListAPIView):
     serializer_class = api_serializer.CartSerializer
-    permission_classes = [AllowAny]  # Adjust permissions as needed (e.g., IsAuthenticated)
+    permission_classes = [AllowAny]  # Consider using IsAuthenticated for security
 
     def get_queryset(self):
         user_id = self.kwargs['user_id']
+        try:
+            # Ensure user_id is an integer
+            user_id = int(user_id)
+        except ValueError:
+            raise Http404("Invalid user_id: must be an integer.")
+
+        # Check if the user exists
+        if not User.objects.filter(id=user_id).exists():
+            raise Http404(f"User with id '{user_id}' does not exist.")
+
+        # Fetch carts for the user
         queryset = api_models.Cart.objects.filter(user__id=user_id)
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        if not queryset.exists():
+            return Response(
+                {"message": f"No cart items found for user_id '{self.kwargs['user_id']}'."},
+                status=status.HTTP_200_OK
+            )
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class CartUpdateByUserAPIView(generics.UpdateAPIView):
+    serializer_class = api_serializer.CartSerializer
+    permission_classes = [AllowAny]  # Consider IsAuthenticated
+
+    # Define request schema
+    request_body_schema = openapi.Schema(
+        type=openapi.TYPE_ARRAY,
+        items=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'course_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='The ID of the course', example=101),
+                'price': openapi.Schema(type=openapi.TYPE_NUMBER, description='The price of the cart item', example=49.00),
+                'country_name': openapi.Schema(type=openapi.TYPE_STRING, description='The name of the country', example='United States'),
+                'cart_id': openapi.Schema(type=openapi.TYPE_STRING, description='A unique identifier for the cart (optional)', example='123456'),
+            },
+            required=['course_id', 'price', 'country_name'],
+        ),
+        min_items=1,
+        description='A list of cart items to add or update'
+    )
+
+    # Define response schemas
+    success_response_schema = openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'results': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, enum=['Cart item added successfully', 'Cart item updated successfully']),
+                        'cart': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'course': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'title': openapi.Schema(type=openapi.TYPE_STRING),
+                                    }
+                                ),
+                                'user': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                                    }
+                                ),
+                                'price': openapi.Schema(type=openapi.TYPE_STRING),
+                                'tax_fee': openapi.Schema(type=openapi.TYPE_STRING),
+                                'total': openapi.Schema(type=openapi.TYPE_STRING),
+                                'country': openapi.Schema(type=openapi.TYPE_STRING),
+                                'cart_id': openapi.Schema(type=openapi.TYPE_STRING),
+                                'date': openapi.Schema(type=openapi.TYPE_STRING, format='date-time'),
+                            }
+                        ),
+                    }
+                )
+            ),
+            'errors': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'index': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'error': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+        }
+    )
+
+    @swagger_auto_schema(
+        operation_summary="Update or Add Multiple Cart Items by User ID",
+        operation_description="Add or update multiple cart items for a user identified by user_id. Each item in the request array represents a cart item.",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description='ID of the user whose cart is being updated',
+                type=openapi.TYPE_INTEGER,
+                required=True,
+            ),
+        ],
+        request_body=request_body_schema,
+        responses={
+            200: openapi.Response(
+                description='All items processed successfully',
+                schema=success_response_schema,
+                examples={
+                    'application/json': {
+                        'results': [
+                            {
+                                'message': 'Cart item added successfully',
+                                'cart': {
+                                    'id': 1,
+                                    'course': {'id': 101, 'title': 'Python Basics'},
+                                    'user': {'id': 1, 'username': 'testuser'},
+                                    'price': '49.00',
+                                    'tax_fee': '5.00',
+                                    'total': '54.00',
+                                    'country': 'United States',
+                                    'cart_id': '123456',
+                                    'date': '2025-04-09T04:34:22.784Z',
+                                },
+                            },
+                        ],
+                        'errors': [],
+                    }
+                }
+            ),
+            207: openapi.Response(
+                description='Mixed success and errors',
+                schema=success_response_schema,
+                examples={
+                    'application/json': {
+                        'results': [
+                            {
+                                'message': 'Cart item added successfully',
+                                'cart': {
+                                    'id': 1,
+                                    'course': {'id': 101, 'title': 'Python Basics'},
+                                    'user': {'id': 1, 'username': 'testuser'},
+                                    'price': '49.00',
+                                    'tax_fee': '5.00',
+                                    'total': '54.00',
+                                    'country': 'United States',
+                                    'cart_id': '123456',
+                                    'date': '2025-04-09T04:34:22.784Z',
+                                },
+                            },
+                        ],
+                        'errors': [
+                            {'index': 1, 'error': "Course with id '999' does not exist."},
+                        ],
+                    }
+                }
+            ),
+            400: openapi.Response(description='Bad Request - Invalid input'),
+            404: openapi.Response(description='Not Found - Invalid user_id or user does not exist'),
+        },
+    )
+    def update(self, request, *args, **kwargs):
+        user_id = self.kwargs['user_id']
+        
+        # Validate user_id
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            raise Http404("Invalid user_id: must be an integer.")
+        
+        if not User.objects.filter(id=user_id).exists():
+            raise Http404(f"User with id '{user_id}' does not exist.")
+
+        # Expect a list of items
+        if not isinstance(request.data, list):
+            return Response(
+                {"error": "Request body must be a list of cart items."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.get(id=user_id)
+        results = []
+        errors = []
+
+        for index, item in enumerate(request.data):
+            # Validate required fields
+            required_fields = ['course_id', 'price', 'country_name']
+            missing_fields = [field for field in required_fields if field not in item]
+            if missing_fields:
+                errors.append({
+                    "index": index,
+                    "error": f"Missing required fields: {', '.join(missing_fields)}"
+                })
+                continue
+
+            course_id = item['course_id']
+            price = item['price']
+            country_name = item['country_name']
+            cart_id = item.get('cart_id', None)
+
+            # Validate course_id
+            try:
+                course_id = int(course_id)
+                course = api_models.Course.objects.filter(id=course_id).first()
+                if not course:
+                    errors.append({
+                        "index": index,
+                        "error": f"Course with id '{course_id}' does not exist."
+                    })
+                    continue
+            except ValueError:
+                errors.append({
+                    "index": index,
+                    "error": "'course_id' must be a valid integer."
+                })
+                continue
+
+            # Validate price
+            try:
+                price = Decimal(price)
+            except (ValueError, TypeError):
+                errors.append({
+                    "index": index,
+                    "error": "'price' must be a valid number."
+                })
+                continue
+
+            # Handle country and tax
+            country_object = api_models.Country.objects.filter(name=country_name).first()
+            country = country_object.name if country_object else "United States"
+            tax_rate = country_object.tax_rate / 100 if country_object else 0
+            tax_fee = price * Decimal(tax_rate)
+            total = price + tax_fee
+
+            # Check if cart item exists
+            cart = api_models.Cart.objects.filter(user__id=user_id, course=course).first()
+
+            if cart:
+                # Update existing cart item
+                cart.price = price
+                cart.tax_fee = tax_fee
+                cart.total = total
+                cart.country = country
+                cart.save()
+                serializer = self.get_serializer(cart)
+                results.append({
+                    "message": "Cart item updated successfully",
+                    "cart": serializer.data
+                })
+            else:
+                # Create new cart item
+                cart = api_models.Cart(
+                    course=course,
+                    user=user,
+                    price=price,
+                    tax_fee=tax_fee,
+                    total=total,
+                    country=country,
+                    cart_id=cart_id if cart_id else api_models.Cart._meta.get_field('cart_id').default(),
+                )
+                cart.save()
+                serializer = self.get_serializer(cart)
+                results.append({
+                    "message": "Cart item added successfully",
+                    "cart": serializer.data
+                })
+
+        response_data = {"results": results}
+        if errors:
+            response_data["errors"] = errors
+            status_code = status.HTTP_207_MULTI_STATUS if results else status.HTTP_400_BAD_REQUEST
+        else:
+            status_code = status.HTTP_200_OK
+
+        return Response(response_data, status=status_code)
+    
+class CartUpdateByCartAndUserAPIView(generics.UpdateAPIView):
+    serializer_class = api_serializer.CartSerializer
+    permission_classes = [AllowAny]  # Consider IsAuthenticated
+
+    # Define request schema
+    request_body_schema = openapi.Schema(
+        type=openapi.TYPE_ARRAY,
+        items=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'course_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='The ID of the course', example=101),
+                'price': openapi.Schema(type=openapi.TYPE_NUMBER, description='The price of the cart item', example=49.00),
+                'country_name': openapi.Schema(type=openapi.TYPE_STRING, description='The name of the country', example='United States'),
+            },
+            required=['course_id', 'price', 'country_name'],
+        ),
+        min_items=1,
+        description='A list of cart items to add or update under the specified cart_id and user_id'
+    )
+
+    # Define response schema
+    success_response_schema = openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'results': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, enum=['Cart item added successfully', 'Cart item updated successfully']),
+                        'cart': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'course': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'title': openapi.Schema(type=openapi.TYPE_STRING),
+                                    }
+                                ),
+                                'user': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                                    }
+                                ),
+                                'price': openapi.Schema(type=openapi.TYPE_STRING),
+                                'tax_fee': openapi.Schema(type=openapi.TYPE_STRING),
+                                'total': openapi.Schema(type=openapi.TYPE_STRING),
+                                'country': openapi.Schema(type=openapi.TYPE_STRING),
+                                'cart_id': openapi.Schema(type=openapi.TYPE_STRING),
+                                'date': openapi.Schema(type=openapi.TYPE_STRING, format='date-time'),
+                            }
+                        ),
+                    }
+                )
+            ),
+            'errors': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'index': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'error': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+        }
+    )
+
+    @swagger_auto_schema(
+        operation_summary="Update or Add Cart Items by Cart ID and User ID",
+        operation_description="Add or update cart items for a specific cart_id and user_id. Each item in the request array is processed under the specified cart_id.",
+        manual_parameters=[
+            openapi.Parameter(
+                'cart_id',
+                openapi.IN_PATH,
+                description='The unique identifier of the cart',
+                type=openapi.TYPE_STRING,
+                required=True,
+            ),
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description='ID of the user whose cart is being updated',
+                type=openapi.TYPE_INTEGER,
+                required=True,
+            ),
+        ],
+        request_body=request_body_schema,
+        responses={
+            200: openapi.Response(
+                description='All items processed successfully',
+                schema=success_response_schema,
+                examples={
+                    'application/json': {
+                        'results': [
+                            {
+                                'message': 'Cart item added successfully',
+                                'cart': {
+                                    'id': 1,
+                                    'course': {'id': 101, 'title': 'Python Basics'},
+                                    'user': {'id': 1, 'username': 'testuser'},
+                                    'price': '49.00',
+                                    'tax_fee': '5.00',
+                                    'total': '54.00',
+                                    'country': 'United States',
+                                    'cart_id': '123456',
+                                    'date': '2025-04-09T04:34:22.784Z',
+                                },
+                            },
+                        ],
+                        'errors': [],
+                    }
+                }
+            ),
+            207: openapi.Response(
+                description='Mixed success and errors',
+                schema=success_response_schema,
+                examples={
+                    'application/json': {
+                        'results': [
+                            {
+                                'message': 'Cart item added successfully',
+                                'cart': {
+                                    'id': 1,
+                                    'course': {'id': 101, 'title': 'Python Basics'},
+                                    'user': {'id': 1, 'username': 'testuser'},
+                                    'price': '49.00',
+                                    'tax_fee': '5.00',
+                                    'total': '54.00',
+                                    'country': 'United States',
+                                    'cart_id': '123456',
+                                    'date': '2025-04-09T04:34:22.784Z',
+                                },
+                            },
+                        ],
+                        'errors': [
+                            {'index': 1, 'error': "Course with id '999' does not exist."},
+                        ],
+                    }
+                }
+            ),
+            400: openapi.Response(description='Bad Request - Invalid input'),
+            404: openapi.Response(description='Not Found - Invalid user_id or user does not exist'),
+        },
+    )
+    def update(self, request, *args, **kwargs):
+        user_id = self.kwargs['user_id']
+        cart_id = self.kwargs['cart_id']
+
+        # Validate user_id
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            raise Http404("Invalid user_id: must be an integer.")
+        
+        if not User.objects.filter(id=user_id).exists():
+            raise Http404(f"User with id '{user_id}' does not exist.")
+
+        # Validate cart_id (basic check for non-empty string)
+        if not cart_id or not isinstance(cart_id, str):
+            return Response(
+                {"error": "Invalid cart_id: must be a non-empty string."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Expect a list of items
+        if not isinstance(request.data, list):
+            return Response(
+                {"error": "Request body must be a list of cart items."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.get(id=user_id)
+        results = []
+        errors = []
+
+        for index, item in enumerate(request.data):
+            # Validate required fields
+            required_fields = ['course_id', 'price', 'country_name']
+            missing_fields = [field for field in required_fields if field not in item]
+            if missing_fields:
+                errors.append({
+                    "index": index,
+                    "error": f"Missing required fields: {', '.join(missing_fields)}"
+                })
+                continue
+
+            course_id = item['course_id']
+            price = item['price']
+            country_name = item['country_name']
+
+            # Validate course_id
+            try:
+                course_id = int(course_id)
+                course = api_models.Course.objects.filter(id=course_id).first()
+                if not course:
+                    errors.append({
+                        "index": index,
+                        "error": f"Course with id '{course_id}' does not exist."
+                    })
+                    continue
+            except ValueError:
+                errors.append({
+                    "index": index,
+                    "error": "'course_id' must be a valid integer."
+                })
+                continue
+
+            # Validate price
+            try:
+                price = Decimal(price)
+            except (ValueError, TypeError):
+                errors.append({
+                    "index": index,
+                    "error": "'price' must be a valid number."
+                })
+                continue
+
+            # Handle country and tax
+            country_object = api_models.Country.objects.filter(name=country_name).first()
+            country = country_object.name if country_object else "United States"
+            tax_rate = country_object.tax_rate / 100 if country_object else 0
+            tax_fee = price * Decimal(tax_rate)
+            total = price + tax_fee
+
+            # Check if cart item exists with the given cart_id and course
+            cart = api_models.Cart.objects.filter(cart_id=cart_id, user__id=user_id, course=course).first()
+
+            if cart:
+                # Update existing cart item
+                cart.price = price
+                cart.tax_fee = tax_fee
+                cart.total = total
+                cart.country = country
+                cart.save()
+                serializer = self.get_serializer(cart)
+                results.append({
+                    "message": "Cart item updated successfully",
+                    "cart": serializer.data
+                })
+            else:
+                # Create new cart item
+                cart = api_models.Cart(
+                    course=course,
+                    user=user,
+                    price=price,
+                    tax_fee=tax_fee,
+                    total=total,
+                    country=country,
+                    cart_id=cart_id,  # Use the provided cart_id from URL
+                )
+                cart.save()
+                serializer = self.get_serializer(cart)
+                results.append({
+                    "message": "Cart item added successfully",
+                    "cart": serializer.data
+                })
+
+        response_data = {"results": results}
+        if errors:
+            response_data["errors"] = errors
+            status_code = status.HTTP_207_MULTI_STATUS if results else status.HTTP_400_BAD_REQUEST
+        else:
+            status_code = status.HTTP_200_OK
+
+        return Response(response_data, status=status_code)
 
 class CartItemDeleteAPIView(generics.DestroyAPIView):
     serializer_class = api_serializer.CartSerializer
@@ -675,6 +1229,7 @@ def get_access_token(client_id, secret_key):
     
 
 class PaymentSuccessAPIView(generics.CreateAPIView):
+    permission_classes = [AllowAny] #Test
     serializer_class = api_serializer.CartOrderSerializer
     queryset = api_models.CartOrder.objects.all()
 
@@ -2786,3 +3341,67 @@ class WritingAnswerReviewUpdateView(APIView):
             updated_serializer = api_serializer.WritingAnswerReviewSerializer(review)
             return Response(updated_serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+class VariantListView(ListAPIView):
+    queryset = api_models.Variant.objects.all()
+    serializer_class = api_serializer.VariantSerializer
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    def get_serializer_context(self):
+        """
+        Pass request context to serializer to handle depth logic.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class VariantDetailView(RetrieveAPIView):
+    queryset = api_models.Variant.objects.all()
+    serializer_class = api_serializer.VariantSerializer
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    def get_serializer_context(self):
+        """
+        Pass request context to serializer to handle depth logic.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class VariantItemListView(ListAPIView):
+    queryset = api_models.VariantItem.objects.all()
+    serializer_class = api_serializer.VariantItemSerializer
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    def get_queryset(self):
+        """
+        Optional: Filter by variant_id if provided in query params.
+        """
+        queryset = api_models.VariantItem.objects.all()
+        variant_id = self.request.query_params.get('variant_id', None)
+        if variant_id is not None:
+            queryset = queryset.filter(variant_id=variant_id)
+        return queryset
+
+    def get_serializer_context(self):
+        """
+        Pass request context to serializer to handle depth logic.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class VariantItemDetailView(RetrieveAPIView):
+    queryset = api_models.VariantItem.objects.all()
+    serializer_class = api_serializer.VariantItemSerializer
+    # permission_classes = [IsAuthenticated]  # Adjust as needed
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    def get_serializer_context(self):
+        """
+        Pass request context to serializer to handle depth logic.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
