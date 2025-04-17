@@ -121,6 +121,7 @@ urlpatterns = [
     path('questions/<int:pk>/delete/', api_views.QuestionDeleteView.as_view(), name='question-delete'),
     path('admin/writing-answer-reviews/', api_views.WritingAnswerReviewListView.as_view(), name='writing_answer_review_list'),
     path('admin/writing-answer-reviews/<str:review_id>/update/', api_views.WritingAnswerReviewUpdateView.as_view(), name='writing_answer_review_update'),
+    path('admin/writing-answer-reviews-user/<str:user_id>/', api_views.WritingAnswerReviewByUserAPIView.as_view(), name='writing_answer_review_user'),
 
     # Writing Answer URLs
     path('writing-answers/', api_views.WritingAnswerListView.as_view(), name='writing-answer-list'),

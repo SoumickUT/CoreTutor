@@ -3405,3 +3405,98 @@ class VariantItemDetailView(RetrieveAPIView):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
+    
+
+class WritingAnswerReviewByUserAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    # Define the response schema (reusing existing schema structure)
+    response_schema = openapi.Schema(
+        type=openapi.TYPE_ARRAY,
+        items=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'id': openapi.Schema(type=openapi.TYPE_STRING, description='Unique ID of the review'),
+                'question': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'question_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'title': openapi.Schema(type=openapi.TYPE_STRING),
+                        'question_type': openapi.Schema(type=openapi.TYPE_STRING, enum=['MCQ', 'WRITING']),
+                        'quiz_id': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                ),
+                'user': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'user_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                ),
+                'answer_details': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                        'submitted_at': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+                        'availability_status': openapi.Schema(type=openapi.TYPE_STRING, enum=['CREATED', 'ANSWERED', 'CHECKED']),
+                        'question_answers': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'is_right': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                }
+                            )
+                        ),
+                    }
+                ),
+                'teacher_review': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'remarks': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'checked_by': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'checked_at': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME, nullable=True),
+                    }
+                ),
+                'date_updated': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+            }
+        )
+    )
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description='ID of the user to filter writing answer reviews',
+                type=openapi.TYPE_STRING,
+                required=True
+            )
+        ],
+        responses={
+            200: response_schema,
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'detail': openapi.Schema(type=openapi.TYPE_STRING, description='Error message')
+                }
+            )
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        try:
+            reviews = api_models.WritingAnswerReview.objects.filter(writing_answer__user__id=user_id)
+            if not reviews.exists():
+                return Response(
+                    {'detail': f'No writing answer reviews found for user_id {user_id}'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            serializer = api_serializer.WritingAnswerReviewSerializer(reviews, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ValueError:
+            return Response(
+                {'detail': 'Invalid user_id format'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
