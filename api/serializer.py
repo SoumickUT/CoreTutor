@@ -967,3 +967,17 @@ class WritingAnswerReviewSerializer(serializers.ModelSerializer):
             'checked_by': obj.teacher.full_name if obj.teacher else None,
             'checked_at': obj.checked_at
         }
+        
+        
+# New Serializer
+class SimpleQuestionSerializer(serializers.ModelSerializer):
+    quiz = serializers.PrimaryKeyRelatedField(queryset=api_models.Quizzes.objects.all())
+    question_type = serializers.ChoiceField(
+        choices=api_models.Question.QUIZ_TYPES,
+        help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
+    )
+    group_id = serializers.IntegerField(source='quiz.group.id', read_only=True)
+
+    class Meta:
+        model = api_models.Question
+        fields = ['id', 'title', 'quiz', 'group_id', 'question_type']

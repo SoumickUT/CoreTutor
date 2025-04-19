@@ -93,6 +93,8 @@ urlpatterns = [
     path('quizzes/', api_views.QuizListView.as_view(), name='quiz-list'),
     path('quizzes/<int:quiz_id>/questions/', api_views.QuestionListView.as_view(), name='question-list'),
     
+    path('quizzes/<int:quiz_id>/questions-by-quiz/', api_views.QuestionByQuizView.as_view(), name='question-list'),
+    
     path('quizzes/<int:quiz_id>/random-question/', api_views.RandomQuestionView.as_view(), name='random-question'),
     
     path('quizzes/<int:quiz_id>/writing-questions/', api_views.WritingQuestionListView.as_view(), name='writing-question-list'),

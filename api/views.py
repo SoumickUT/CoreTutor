@@ -2029,6 +2029,7 @@ class CourseVariantItemDeleteAPIVIew(generics.DestroyAPIView):
     
 
 class QuizListView(generics.ListAPIView):
+    permission_classes = [AllowAny]
     queryset = api_models.Quizzes.objects.all()
     serializer_class = api_serializer.QuizSerializer
 
@@ -2051,9 +2052,11 @@ class RandomQuestionView(APIView):
         return Response({'error': 'No questions available'}, status=404)
     
 class WritingQuestionListView(APIView):
+    
     """
     Returns a list of writing questions for a specific quiz.
     """
+    permission_classes = [AllowAny]
     def get(self, request, quiz_id):
         questions = api_models.Question.objects.filter(quiz_id=quiz_id, question_type='WRITING')
         serializer = api_serializer.QuestionSerializer(questions, many=True)
@@ -2478,12 +2481,42 @@ class QuestionUpdateView(APIView):
 #         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class QuestionListView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request, *args, **kwargs):
         questions = api_models.Question.objects.all()
         serializer = QuestionSerializer(questions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+# View using the new serializer
+# Updated View
+class QuestionByQuizView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, quiz_id, *args, **kwargs):
+        try:
+            quiz_id = int(quiz_id)  # Ensure quiz_id is an integer
+            if not api_models.Quizzes.objects.filter(id=quiz_id).exists():
+                return Response(
+                    {"detail": "Quiz with this ID does not exist."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            questions = api_models.Question.objects.filter(quiz_id=quiz_id)
+            if not questions.exists():
+                return Response(
+                    {"detail": "No questions found for the given quiz_id."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        except ValueError:
+            return Response(
+                {"detail": "Invalid quiz_id provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = api_serializer.SimpleQuestionSerializer(questions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class QuestionDetailView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request, *args, **kwargs):
         try:
             question = api_models.Question.objects.get(id=kwargs['pk'])
@@ -3114,6 +3147,7 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class GroupQuizDetailsView(APIView):
+    permission_classes = [AllowAny]
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
@@ -3142,6 +3176,7 @@ class GroupQuizDetailsView(APIView):
     
 
 class GroupQuizByQuestionTypeView(APIView):
+    permission_classes = [AllowAny]
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
