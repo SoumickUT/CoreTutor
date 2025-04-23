@@ -26,7 +26,7 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView  # Import APIView
 from drf_yasg.utils import swagger_auto_schema
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample,inline_serializer
 from drf_spectacular.types import OpenApiTypes
 import random
 from drf_yasg import openapi
@@ -40,6 +40,8 @@ from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, Qu
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework import serializers as drf_serializers
+from django.db.models import Count,Q
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
@@ -2500,7 +2502,7 @@ class QuestionByQuizView(APIView):
                     {"detail": "Quiz with this ID does not exist."},
                     status=status.HTTP_404_NOT_FOUND
                 )
-            questions = api_models.Question.objects.filter(quiz_id=quiz_id)
+            questions = api_models.Question.objects.filter(quiz_id=quiz_id).prefetch_related('answers')
             if not questions.exists():
                 return Response(
                     {"detail": "No questions found for the given quiz_id."},
@@ -2792,6 +2794,7 @@ class MCQAnswerUpdateView(APIView):
 
 
 class MCQAnswerListView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request, *args, **kwargs):
         mcq_answers = api_models.MCQAnswer.objects.all()
         serializer = api_serializer.MCQAnswerSerializer(mcq_answers, many=True)
@@ -2799,6 +2802,7 @@ class MCQAnswerListView(APIView):
 
 
 class MCQAnswerDetailView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request, *args, **kwargs):
         try:
             mcq_answer = api_models.MCQAnswer.objects.get(id=kwargs['pk'])
@@ -3535,3 +3539,496 @@ class WritingAnswerReviewByUserAPIView(APIView):
                 {'detail': 'Invalid user_id format'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+            
+class SubscribedListView(APIView):
+    permission_classes = [AllowAny]
+    @extend_schema(
+        responses={200: api_serializer.SubscribedSerializer(many=True)},
+        methods=["GET"],
+        description="Retrieve a list of all subscribed emails."
+    )
+    def get(self, request, *args, **kwargs):
+        subscribed = api_models.Subscribed.objects.all()
+        serializer = api_serializer.SubscribedSerializer(subscribed, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=inline_serializer(
+            name='SubscribedCreateSerializer',
+            fields={
+                'email': drf_serializers.EmailField(),
+            }
+        ),
+        responses={
+            201: api_serializer.SubscribedSerializer,
+            400: OpenApiExample('Invalid data', value={'detail': 'Invalid email format.'})
+        },
+        methods=["POST"],
+        description="Create a new subscribed email.",
+        examples=[
+            OpenApiExample(
+                'Valid POST request',
+                value={'email': 'user@example.com'},
+                request_only=True
+            ),
+            OpenApiExample(
+                'Invalid POST request',
+                value={'email': 'invalid-email'},
+                request_only=True,
+                status_codes=['400']
+            )
+        ]
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = api_serializer.SubscribedSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class SubscribedDetailView(APIView):
+    permission_classes = [AllowAny]
+    @extend_schema(
+        responses={200: api_serializer.SubscribedSerializer, 404: OpenApiExample('Not found', value={'detail': 'Not found.'})},
+        methods=["GET"],
+        description="Retrieve a specific subscribed email by ID."
+    )
+    def get(self, request, *args, **kwargs):
+        try:
+            subscribed = api_models.Subscribed.objects.get(id=kwargs['pk'])
+        except api_models.Subscribed.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = api_serializer.SubscribedSerializer(subscribed)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=inline_serializer(
+            name='SubscribedUpdateSerializer',
+            fields={
+                'email': drf_serializers.EmailField(),
+            }
+        ),
+        responses={
+            200: api_serializer.SubscribedSerializer,
+            400: OpenApiExample('Invalid data', value={'detail': 'Invalid email format.'}),
+            404: OpenApiExample('Not found', value={'detail': 'Not found.'})
+        },
+        methods=["PUT"],
+        description="Update an existing subscribed email by ID.",
+        examples=[
+            OpenApiExample(
+                'Valid PUT request',
+                value={'email': 'updated@example.com'},
+                request_only=True
+            )
+        ]
+    )
+    def put(self, request, *args, **kwargs):
+        try:
+            subscribed = api_models.Subscribed.objects.get(id=kwargs['pk'])
+        except api_models.Subscribed.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = api_serializer.SubscribedSerializer(subscribed, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        responses={204: None, 404: OpenApiExample('Not found', value={'detail': 'Not found.'})},
+        methods=["DELETE"],
+        description="Delete a subscribed email by ID."
+    )
+    def delete(self, request, *args, **kwargs):
+        try:
+            subscribed = api_models.Subscribed.objects.get(id=kwargs['pk'])
+        except api_models.Subscribed.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        subscribed.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+
+class ContactListView(APIView):
+    permission_classes = [AllowAny]
+    @extend_schema(
+        responses={200: api_serializer.ContactSerializer(many=True)},
+        methods=["GET"],
+        description="Retrieve a list of all contact messages."
+    )
+    def get(self, request, *args, **kwargs):
+        contacts = api_models.Contact.objects.all()
+        serializer = api_serializer.ContactSerializer(contacts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=inline_serializer(
+            name='ContactCreateSerializer',
+            fields={
+                'subject': drf_serializers.CharField(max_length=200),
+                'message': drf_serializers.CharField(),
+            }
+        ),
+        responses={
+            201: api_serializer.ContactSerializer,
+            400: OpenApiExample('Invalid data', value={'detail': 'Subject or message is invalid.'})
+        },
+        methods=["POST"],
+        description="Create a new contact message.",
+        examples=[
+            OpenApiExample(
+                'Valid POST request',
+                value={'subject': 'Inquiry', 'message': 'Hello, I have a question.'},
+                request_only=True
+            ),
+            OpenApiExample(
+                'Invalid POST request',
+                value={'subject': '', 'message': ''},
+                request_only=True,
+                status_codes=['400']
+            )
+        ]
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = api_serializer.ContactSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ContactDetailView(APIView):
+    permission_classes = [AllowAny]
+    @extend_schema(
+        responses={200: api_serializer.ContactSerializer, 404: OpenApiExample('Not found', value={'detail': 'Not found.'})},
+        methods=["GET"],
+        description="Retrieve a specific contact message by ID."
+    )
+    def get(self, request, *args, **kwargs):
+        try:
+            contact = api_models.Contact.objects.get(id=kwargs['pk'])
+        except api_models.Contact.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = api_serializer.ContactSerializer(contact)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=inline_serializer(
+            name='ContactUpdateSerializer',
+            fields={
+                'subject': drf_serializers.CharField(max_length=200),
+                'message': drf_serializers.CharField(),
+            }
+        ),
+        responses={
+            200: api_serializer.ContactSerializer,
+            400: OpenApiExample('Invalid data', value={'detail': 'Subject or message is invalid.'}),
+            404: OpenApiExample('Not found', value={'detail': 'Not found.'})
+        },
+        methods=["PUT"],
+        description="Update an existing contact message by ID.",
+        examples=[
+            OpenApiExample(
+                'Valid PUT request',
+                value={'subject': 'Updated Inquiry', 'message': 'Updated message.'},
+                request_only=True
+            )
+        ]
+    )
+    def put(self, request, *args, **kwargs):
+        try:
+            contact = api_models.Contact.objects.get(id=kwargs['pk'])
+        except api_models.Contact.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = api_serializer.ContactSerializer(contact, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        responses={204: None, 404: OpenApiExample('Not found', value={'detail': 'Not found.'})},
+        methods=["DELETE"],
+        description="Delete a contact message by ID."
+    )
+    def delete(self, request, *args, **kwargs):
+        try:
+            contact = api_models.Contact.objects.get(id=kwargs['pk'])
+        except api_models.Contact.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        contact.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    
+# API View to count answers user-wise and date-time-wise
+class UserDateAnswerCountView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        question_id = kwargs.get('question_id')
+        try:
+            question = api_models.Question.objects.get(id=question_id)
+        except api_models.Question.DoesNotExist:
+            return Response({"detail": "Question not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Initialize response data
+        response_data = {
+            "question_id": question_id,
+            "user_answer_counts": [],
+            "answer_details": []
+        }
+
+        # Count answers per user
+        mcq_user_counts = question.mcq_answers.values('user__id', 'user__username').annotate(
+            total_mcq=Count('id'),
+            correct_mcq=Count('id', filter=Q(selected_answer__is_right=True))
+        )
+        writing_user_counts = question.writing_answers.values('user__id', 'user__username').annotate(
+            total_writing=Count('id')
+        )
+
+        # Combine user counts
+        user_counts = {}
+        for mcq in mcq_user_counts:
+            user_id = mcq['user__id']
+            user_counts[user_id] = {
+                "user_id": user_id,
+                "username": mcq['user__username'],
+                "total_mcq": mcq['total_mcq'],
+                "correct_mcq": mcq['correct_mcq'],
+                "total_writing": 0
+            }
+        for writing in writing_user_counts:
+            user_id = writing['user__id']
+            if user_id in user_counts:
+                user_counts[user_id]["total_writing"] = writing['total_writing']
+            else:
+                user_counts[user_id] = {
+                    "user_id": user_id,
+                    "username": writing['user__username'],
+                    "total_mcq": 0,
+                    "correct_mcq": 0,
+                    "total_writing": writing['total_writing']
+                }
+
+        response_data["user_answer_counts"] = list(user_counts.values())
+
+        # Collect answer details (without created_at)
+        answer_details = []
+        # MCQ answers
+        mcq_answers = question.mcq_answers.select_related('user', 'selected_answer')
+        for answer in mcq_answers:
+            answer_details.append({
+                "user_id": answer.user.id,
+                "username": answer.user.username,
+                "answer_type": "MCQ",
+                "answer_text": answer.selected_answer.answer_text,
+                "is_correct": answer.selected_answer.is_right
+            })
+        # Writing answers
+        writing_answers = question.writing_answers.select_related('user')
+        for answer in writing_answers:
+            answer_details.append({
+                "user_id": answer.user.id,
+                "username": answer.user.username,
+                "answer_type": "Writing",
+                "answer_text": answer.answer_text,
+                "is_correct": False
+            })
+
+        # Serialize answer details
+        serializer = api_serializer.AnswerDetailUserSerializer(answer_details, many=True)
+        response_data["answer_details"] = serializer.data
+
+        return Response(response_data, status=status.HTTP_200_OK)
+    
+
+class UserSpecificAnswerCountView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        question_id = kwargs.get('question_id')
+        user_id = kwargs.get('user_id')
+
+        # Validate question_id
+        try:
+            question = api_models.Question.objects.get(id=question_id)
+        except api_models.Question.DoesNotExist:
+            return Response({"detail": "Question not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Validate user_id
+        try:
+            user = api_models.User.objects.get(id=user_id)
+        except api_models.User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Initialize response data
+        response_data = {
+            "question_id": question_id,
+            "user_id": user_id,
+            "user_answer_counts": {},
+            "answer_details": []
+        }
+
+        # Count answers for the user
+        mcq_counts = question.mcq_answers.filter(user_id=user_id).aggregate(
+            total_mcq=Count('id'),
+            correct_mcq=Count('id', filter=Q(selected_answer__is_right=True))
+        )
+        writing_counts = question.writing_answers.filter(user_id=user_id).aggregate(
+            total_writing=Count('id')
+        )
+
+        # Populate user_answer_counts
+        response_data["user_answer_counts"] = {
+            "user_id": user_id,
+            "username": user.username,
+            "total_mcq": mcq_counts['total_mcq'] or 0,
+            "correct_mcq": mcq_counts['correct_mcq'] or 0,
+            "total_writing": writing_counts['total_writing'] or 0
+        }
+
+        # Collect answer details
+        answer_details = []
+        # MCQ answers
+        mcq_answers = question.mcq_answers.filter(user_id=user_id).select_related('user', 'selected_answer')
+        for answer in mcq_answers:
+            answer_details.append({
+                "user_id": answer.user.id,
+                "username": answer.user.username,
+                "answer_type": "MCQ",
+                "answer_text": answer.selected_answer.answer_text,
+                "is_correct": answer.selected_answer.is_right
+            })
+        # Writing answers
+        writing_answers = question.writing_answers.filter(user_id=user_id).select_related('user')
+        for answer in writing_answers:
+            answer_details.append({
+                "user_id": answer.user.id,
+                "username": answer.user.username,
+                "answer_type": "Writing",
+                "answer_text": answer.answer_text,
+                "is_correct": False
+            })
+
+        # Serialize answer details
+        serializer = api_serializer.AnswerDetailUserSerializer(answer_details, many=True)
+        response_data["answer_details"] = serializer.data
+
+        return Response(response_data, status=status.HTTP_200_OK)
+    
+    
+class GalleryCreateView(generics.CreateAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Gallery.objects.all()
+    serializer_class = api_serializer.GallerySerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
+# Gallery Views
+class GalleryListView(generics.ListAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Gallery.objects.all()
+    serializer_class = api_serializer.GallerySerializer
+
+class GalleryRetrieveView(generics.RetrieveAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Gallery.objects.all()
+    serializer_class = api_serializer.GallerySerializer
+    lookup_field = 'id'
+
+class GalleryUpdateView(generics.UpdateAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Gallery.objects.all()
+    serializer_class = api_serializer.GallerySerializer
+    lookup_field = 'id'
+
+class GalleryDeleteView(generics.DestroyAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Gallery.objects.all()
+    serializer_class = api_serializer.GallerySerializer
+    lookup_field = 'id'
+    
+class EventCreateView(generics.CreateAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Event.objects.all()
+    serializer_class = api_serializer.EventSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
+    
+class EventListView(generics.ListAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Event.objects.all()
+    serializer_class = api_serializer.EventSerializer
+
+class EventRetrieveView(generics.RetrieveAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Event.objects.all()
+    serializer_class = api_serializer.EventSerializer
+    lookup_field = 'id'
+
+class EventUpdateView(generics.UpdateAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Event.objects.all()
+    serializer_class = api_serializer.EventSerializer
+    lookup_field = 'id'
+
+class EventDeleteView(generics.DestroyAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.Event.objects.all()
+    serializer_class = api_serializer.EventSerializer
+    lookup_field = 'id'
+    
+    
+class StudentSectionCreateView(generics.CreateAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.StudentSection.objects.all()
+    serializer_class = api_serializer.StudentSectionSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+class StudentSectionListView(generics.ListAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.StudentSection.objects.all()
+    serializer_class = api_serializer.StudentSectionSerializer
+
+class StudentSectionRetrieveView(generics.RetrieveAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.StudentSection.objects.all()
+    serializer_class = api_serializer.StudentSectionSerializer
+    lookup_field = 'id'
+
+class StudentSectionUpdateView(generics.UpdateAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.StudentSection.objects.all()
+    serializer_class = api_serializer.StudentSectionSerializer
+    lookup_field = 'id'
+
+class StudentSectionDeleteView(generics.DestroyAPIView):
+    permission_classes = [AllowAny]
+    queryset = api_models.StudentSection.objects.all()
+    serializer_class = api_serializer.StudentSectionSerializer
+    lookup_field = 'id'

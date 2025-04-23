@@ -521,6 +521,11 @@ class TeacherSummarySerializer(serializers.Serializer):
     monthly_revenue = serializers.IntegerField(default=0)
     
 
+class SubscribedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Subscribed
+        fields = ['id', 'name']
+
 class GroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = api_models.Group
@@ -977,7 +982,44 @@ class SimpleQuestionSerializer(serializers.ModelSerializer):
         help_text="Type of question: 'MCQ' for Multiple Choice or 'WRITING' for Writing Question."
     )
     group_id = serializers.IntegerField(source='quiz.group.id', read_only=True)
+    answers = AnswerSerializer(many=True, read_only=True)  # Removed source='answers'
 
     class Meta:
         model = api_models.Question
-        fields = ['id', 'title', 'quiz', 'group_id', 'question_type']
+        fields = ['id', 'title', 'quiz', 'group_id', 'question_type', 'answers']
+        
+        
+
+class ContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Contact
+        fields = ['id', 'subject', 'message', 'created_at']
+        
+        
+
+# Serializer for individual answer details
+class AnswerDetailUserSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    answer_type = serializers.CharField()
+    answer_text = serializers.CharField()
+    is_correct = serializers.BooleanField(default=False)
+
+
+# serializers.py
+class GallerySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Gallery
+        fields = ['id', 'title', 'image', 'create_date']
+        
+        
+class EventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.Event
+        fields = ['id', 'title', 'description', 'image', 'start_date', 'end_date', 'create_date']
+        
+        
+class StudentSectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = api_models.StudentSection
+        fields = ['id', 'title', 'description', 'image', 'create_date', 'status']

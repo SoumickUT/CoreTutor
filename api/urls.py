@@ -143,9 +143,34 @@ urlpatterns = [
     path('mcq-answers/<int:user_id>/', api_views.MCQAnswersByUserView.as_view(), name='mcq-answers-by-user'),
     path('mcq-answers/non_authen/<int:user_id>/', api_views.NonAuthenTicateMCQAnswersByUserView.as_view(), name='mcq-answers-by-non-athun-user'),
     path('answer-count/<int:question_id>/', api_views.AnswerCountView.as_view(), name='answer-count'),
+    path('questions/<int:question_id>/user-date-answer-count/', api_views.UserDateAnswerCountView.as_view(), name='user-date-answer-count'),
+    path('questions/<int:user_id>/user-wise-answer-count/', api_views.UserSpecificAnswerCountView.as_view(), name='user-wise-answer-count'),
     
     
-   
+    path('subscribed/', api_views.SubscribedListView.as_view(), name='subscribed-list'),
+    path('subscribed/<int:pk>/', api_views.SubscribedDetailView.as_view(), name='subscribed-detail'),
+    
+    path('contact/', api_views.ContactListView.as_view(), name='contact-list'),
+    path('contact/<int:pk>/', api_views.ContactDetailView.as_view(), name='contact-detail'),
+    
+    # Gallery URLs
+    path('gallery/', api_views.GalleryListView.as_view(), name='gallery-list'),           # GET all galleries
+    path('gallery/<int:id>/', api_views.GalleryRetrieveView.as_view(), name='gallery-detail'),  # GET one gallery
+    path('gallery/<int:id>/update/', api_views.GalleryUpdateView.as_view(), name='gallery-update'),  # PUT/PATCH to update
+    path('gallery/<int:id>/delete/', api_views.GalleryDeleteView.as_view(), name='gallery-delete'),  # DELETE
+    path('gallery/create/', api_views.GalleryCreateView.as_view(), name='gallery-create'),  # POST (already exists)
+    
+    path('events/', api_views.EventListView.as_view(), name='event-list'),           # GET all events
+    path('events/<int:id>/', api_views.EventRetrieveView.as_view(), name='event-detail'),  # GET one event
+    path('events/<int:id>/update/', api_views.EventUpdateView.as_view(), name='event-update'),  # PUT/PATCH to update
+    path('events/<int:id>/delete/', api_views.EventDeleteView.as_view(), name='event-delete'),  # DELETE
+    path('events/create/', api_views.EventCreateView.as_view(), name='event-create'),  # POST (already exists)
+    
+    path('student-sections/', api_views.StudentSectionListView.as_view(), name='student-section-list'),
+    path('student-sections/<int:id>/', api_views.StudentSectionRetrieveView.as_view(), name='student-section-detail'),
+    path('student-sections/<int:id>/update/', api_views.StudentSectionUpdateView.as_view(), name='student-section-update'),
+    path('student-sections/<int:id>/delete/', api_views.StudentSectionDeleteView.as_view(), name='student-section-delete'),
+    path('student-sections/create/', api_views.StudentSectionCreateView.as_view(), name='student-section-create'),
     
     # path('courses/create/', api_views.CourseViewSet.as_view({'post': 'create'}), name='course-create'),
     

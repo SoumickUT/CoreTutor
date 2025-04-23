@@ -413,6 +413,23 @@ class Group(models.Model):
 
     def __str__(self):
         return self.name
+    
+
+class Subscribed(models.Model):
+    name = models.CharField(max_length=254, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Contact(models.Model):
+    subject = models.CharField(max_length=200)
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.subject
+
 
 
 # class Quizzes(models.Model):
@@ -557,3 +574,38 @@ class WritingAnswerReview(models.Model):
 
     def __str__(self):
         return f"Review for {self.writing_answer} by {self.teacher}"
+    
+
+class Gallery(models.Model):
+    title = models.CharField(max_length=100)
+    image = models.FileField(upload_to="gallery-file", default="gallery.jpg", null=True, blank=True)
+    create_date = models.DateTimeField(auto_now_add=True)
+    slug = models.SlugField(unique=True, null=True, blank=True)
+
+    def __str__(self):
+        return self.title
+    
+    
+class Event(models.Model):
+    title = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    image = models.FileField(upload_to="event-file", default="event.jpg", null=True, blank=True)
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField()
+    create_date = models.DateTimeField(auto_now_add=True)
+    slug = models.SlugField(unique=True, null=True, blank=True)
+
+    def __str__(self):
+        return self.title
+    
+
+class StudentSection(models.Model):
+    title = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    image = models.FileField(upload_to="student-section-file", default="student_section.jpg", null=True, blank=True)
+    create_date = models.DateTimeField(auto_now_add=True)
+    slug = models.SlugField(unique=True, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=[('ACTIVE', 'Active'), ('INACTIVE', 'Inactive')], default='ACTIVE')
+
+    def __str__(self):
+        return self.title
