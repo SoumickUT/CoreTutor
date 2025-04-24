@@ -172,6 +172,12 @@ urlpatterns = [
     path('student-sections/<int:id>/delete/', api_views.StudentSectionDeleteView.as_view(), name='student-section-delete'),
     path('student-sections/create/', api_views.StudentSectionCreateView.as_view(), name='student-section-create'),
     
+    path('exam-submissions/', api_views.ExamSubmissionCreateAPIView.as_view(), name='exam_submission_create'),
+    path('exam-submissions/all/', api_views.ExamSubmissionListAPIView.as_view(), name='exam_submission_list'),
+    path('exam-submissions/user/<int:user_id>/', api_views.ExamSubmissionByUserAPIView.as_view(), name='exam_submission_by_user'),
+    path('exam-submissions/quiz/<int:quiz_id>/', api_views.ExamSubmissionByQuizAPIView.as_view(), name='exam_submission_by_quiz'),
+    path('exam-submissions/<int:id>/', api_views.ExamSubmissionDetailAPIView.as_view(), name='exam_submission_detail'),
+    
     # path('courses/create/', api_views.CourseViewSet.as_view({'post': 'create'}), name='course-create'),
     
     

@@ -6,6 +6,7 @@ from moviepy import VideoFileClip
 from userauths.models import User, Profile
 from shortuuid.django_fields import ShortUUIDField
 import math
+import json
 
 LANGUAGE = (
     ("English", "English"),
@@ -609,3 +610,29 @@ class StudentSection(models.Model):
 
     def __str__(self):
         return self.title
+    
+
+class ExamSubmission(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    quiz = models.ForeignKey(Quizzes, on_delete=models.CASCADE)
+    submission_date = models.DateTimeField()
+    time_taken = models.IntegerField()  # In seconds
+    total_questions = models.IntegerField()
+    correct_answers = models.IntegerField()
+    score_percentage = models.FloatField()
+    answers = models.TextField()  # Store answers as a JSON string
+
+    def get_answers(self):
+        """Deserialize JSON string to Python object."""
+        return json.loads(self.answers)
+
+    def set_answers(self, answers_data):
+        """Serialize Python object to JSON string."""
+        self.answers = json.dumps(answers_data)
+
+    def __str__(self):
+        return f"Submission by {self.user} for Quiz {self.quiz.id}"
+
+    class Meta:
+        verbose_name = "Exam Submission"
+        verbose_name_plural = "Exam Submissions"

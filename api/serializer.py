@@ -1023,3 +1023,85 @@ class StudentSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = api_models.StudentSection
         fields = ['id', 'title', 'description', 'image', 'create_date', 'status']
+        
+        
+class ExamSubmissionSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)  # Added for retrieval
+    quiz_id = serializers.IntegerField()
+    user_id = serializers.IntegerField()
+    correct_answers = serializers.IntegerField()
+    score_percentage = serializers.FloatField()
+    submission_date = serializers.DateTimeField()
+    time_taken = serializers.IntegerField()
+    total_questions = serializers.IntegerField()
+    answers = serializers.ListField(
+        child=serializers.DictField(
+            child=serializers.IntegerField()
+        )
+    )
+
+    def validate(self, data):
+        # Validate quiz_id
+        if not api_models.Quizzes.objects.filter(id=data['quiz_id']).exists():
+            raise serializers.ValidationError({"quiz_id": "Invalid quiz ID"})
+
+        # Validate user_id
+        if not User.objects.filter(id=data['user_id']).exists():
+            raise serializers.ValidationError({"user_id": "Invalid user ID"})
+
+        # Validate answers
+        for answer in data['answers']:
+            question_id = answer.get('question')
+            selected_answer_id = answer.get('selected_answer')
+
+            # Check if question exists and is MCQ
+            try:
+                question = api_models.Question.objects.get(id=question_id, question_type='MCQ')
+            except api_models.Question.DoesNotExist:
+                raise serializers.ValidationError({
+                    "answers": f"Question ID {question_id} is invalid or not an MCQ"
+                })
+
+            # Check if selected_answer exists and belongs to the question
+            if not api_models.Answer.objects.filter(id=selected_answer_id, question_id=question_id).exists():
+                raise serializers.ValidationError({
+                    "answers": f"Selected answer ID {selected_answer_id} is invalid for question {question_id}"
+                })
+
+        return data
+
+    def create(self, validated_data):
+        answers_data = validated_data.pop('answers')
+        user = User.objects.get(id=validated_data['user_id'])
+        quiz = api_models.Quizzes.objects.get(id=validated_data['quiz_id'])
+
+        exam_submission = api_models.ExamSubmission(
+            user=user,
+            quiz=quiz,
+            submission_date=validated_data['submission_date'],
+            time_taken=validated_data['time_taken'],
+            total_questions=validated_data['total_questions'],
+            correct_answers=validated_data['correct_answers'],
+            score_percentage=validated_data['score_percentage']
+        )
+        exam_submission.set_answers(answers_data)
+        exam_submission.save()
+
+        return exam_submission
+
+    def update(self, instance, validated_data):
+        answers_data = validated_data.pop('answers', None)
+        instance.user = User.objects.get(id=validated_data.get('user_id', instance.user.id))
+        instance.quiz = api_models.Quizzes.objects.get(id=validated_data.get('quiz_id', instance.quiz.id))
+        instance.submission_date = validated_data.get('submission_date', instance.submission_date)
+        instance.time_taken = validated_data.get('time_taken', instance.time_taken)
+        instance.total_questions = validated_data.get('total_questions', instance.total_questions)
+        instance.correct_answers = validated_data.get('correct_answers', instance.correct_answers)
+        instance.score_percentage = validated_data.get('score_percentage', instance.score_percentage)
+        
+        if answers_data is not None:
+            instance.set_answers(answers_data)
+        
+        instance.save()
+        return instance
+    

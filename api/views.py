@@ -11,7 +11,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate
 from api import serializer as api_serializer
 from api import models as api_models
-from userauths.models import User, Profile
+from userauths.models import User, Profile 
+from api.models import ExamSubmission 
 # In your views.py
 from rest_framework import permissions
 # Example usage in a view
@@ -36,7 +37,7 @@ import requests
 from datetime import datetime, timedelta
 from distutils.util import strtobool
 from rest_framework.exceptions import NotFound
-from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, QuestionSerializer, WritingAnswerSerializer
+from api.serializer import GroupSerializer, QuizSerializer, AnswerSerializer, QuestionSerializer, WritingAnswerSerializer, ExamSubmissionSerializer
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -3251,15 +3252,110 @@ class GroupQuizByQuestionTypeView(APIView):
 #         return Response(serializer.data, status=status.HTTP_200_OK)
   
 class WritingAnswerReviewListView(APIView):
-    # permission_classes = [IsAdminUser]
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        reviews = api_models.WritingAnswerReview.objects.all()
+        reviews = api_models.WritingAnswerReview.objects.filter(
+            writing_answer__question__question_type='WRITING'  # Filter for WRITING question type
+        )
         serializer = api_serializer.WritingAnswerReviewSerializer(reviews, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)  
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-# Define the request schema
+class WritingAnswerReviewByUserAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    # Define the response schema (reusing existing schema structure)
+    response_schema = openapi.Schema(
+        type=openapi.TYPE_ARRAY,
+        items=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'id': openapi.Schema(type=openapi.TYPE_STRING, description='Unique ID of the review'),
+                'question': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'question_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'title': openapi.Schema(type=openapi.TYPE_STRING),
+                        'question_type': openapi.Schema(type=openapi.TYPE_STRING, enum=['MCQ', 'WRITING']),
+                        'quiz_id': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                ),
+                'user': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'user_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                ),
+                'answer_details': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                        'submitted_at': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+                        'availability_status': openapi.Schema(type=openapi.TYPE_STRING, enum=['CREATED', 'ANSWERED', 'CHECKED']),
+                        'question_answers': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'is_right': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                }
+                            )
+                        ),
+                    }
+                ),
+                'teacher_review': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'remarks': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'checked_by': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'checked_at': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME, nullable=True),
+                    }
+                ),
+                'date_updated': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+            }
+        )
+    )
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description='ID of the user to filter writing answer reviews',
+                type=openapi.TYPE_STRING,
+                required=True
+            )
+        ],
+        responses={
+            200: response_schema,
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'detail': openapi.Schema(type=openapi.TYPE_STRING, description='Error message')
+                }
+            )
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        try:
+            reviews = api_models.WritingAnswerReview.objects.filter(writing_answer__user__id=user_id)
+            if not reviews.exists():
+                return Response(
+                    {'detail': f'No writing answer reviews found for user_id {user_id}'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            serializer = api_serializer.WritingAnswerReviewSerializer(reviews, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ValueError:
+            return Response(
+                {'detail': 'Invalid user_id format'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+# Define the request schema (from your earlier message)
 writing_answer_review_update_schema = openapi.Schema(
     type=openapi.TYPE_OBJECT,
     properties={
@@ -3290,7 +3386,7 @@ writing_answer_review_update_schema = openapi.Schema(
     required=[]  # No fields are strictly required for PATCH (partial update)
 )
 
-# Define the response schema (reusing the full response structure)
+# Define the response schema (from your earlier message)
 writing_answer_review_response_schema = openapi.Schema(
     type=openapi.TYPE_OBJECT,
     properties={
@@ -3341,7 +3437,7 @@ writing_answer_review_response_schema = openapi.Schema(
         'date_updated': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
     }
 )
-
+         
 # Update View with Schema
 class WritingAnswerReviewUpdateView(APIView):
     permission_classes = [AllowAny]
@@ -3380,7 +3476,6 @@ class WritingAnswerReviewUpdateView(APIView):
             updated_serializer = api_serializer.WritingAnswerReviewSerializer(review)
             return Response(updated_serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
     
 class VariantListView(ListAPIView):
     queryset = api_models.Variant.objects.all()
@@ -4032,3 +4127,285 @@ class StudentSectionDeleteView(generics.DestroyAPIView):
     queryset = api_models.StudentSection.objects.all()
     serializer_class = api_serializer.StudentSectionSerializer
     lookup_field = 'id'
+    
+    
+
+# Base response schema for consistency
+response_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the exam submission'),
+        'quiz_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+        'correct_answers': openapi.Schema(type=openapi.TYPE_INTEGER),
+        'score_percentage': openapi.Schema(type=openapi.TYPE_NUMBER),
+        'submission_date': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+        'time_taken': openapi.Schema(type=openapi.TYPE_INTEGER),
+        'total_questions': openapi.Schema(type=openapi.TYPE_INTEGER),
+        'answers': openapi.Schema(
+            type=openapi.TYPE_ARRAY,
+            items=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'question': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'selected_answer': openapi.Schema(type=openapi.TYPE_INTEGER),
+                }
+            )
+        )
+    }
+)
+
+# Request body schema for POST and PUT
+request_body_schema = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    required=['quiz_id', 'user_id', 'correct_answers', 'score_percentage', 'submission_date', 'time_taken', 'total_questions', 'answers'],
+    properties={
+        'quiz_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the quiz'),
+        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the user'),
+        'correct_answers': openapi.Schema(type=openapi.TYPE_INTEGER, description='Number of correct answers'),
+        'score_percentage': openapi.Schema(type=openapi.TYPE_NUMBER, description='Score percentage'),
+        'submission_date': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME, description='Submission timestamp'),
+        'time_taken': openapi.Schema(type=openapi.TYPE_INTEGER, description='Time taken in seconds'),
+        'total_questions': openapi.Schema(type=openapi.TYPE_INTEGER, description='Total number of questions'),
+        'answers': openapi.Schema(
+            type=openapi.TYPE_ARRAY,
+            items=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'question': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question ID'),
+                    'selected_answer': openapi.Schema(type=openapi.TYPE_INTEGER, description='Selected answer ID'),
+                },
+                required=['question', 'selected_answer']
+            )
+        )
+    }
+)
+
+class ExamSubmissionCreateAPIView(APIView):
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    @swagger_auto_schema(
+        request_body=request_body_schema,
+        responses={
+            201: response_schema,
+            400: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )
+        },
+        operation_description="Submit a new exam with MCQ answers."
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = ExamSubmissionSerializer(data=request.data)
+        if serializer.is_valid():
+            exam_submission = serializer.save()
+            response_data = {
+                'id': exam_submission.id,
+                'quiz_id': exam_submission.quiz.id,
+                'user_id': exam_submission.user.id,
+                'correct_answers': exam_submission.correct_answers,
+                'score_percentage': exam_submission.score_percentage,
+                'submission_date': exam_submission.submission_date,
+                'time_taken': exam_submission.time_taken,
+                'total_questions': exam_submission.total_questions,
+                'answers': exam_submission.get_answers()
+            }
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ExamSubmissionListAPIView(APIView):
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    @swagger_auto_schema(
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=response_schema
+            )
+        },
+        operation_description="Retrieve all exam submissions."
+    )
+    def get(self, request, *args, **kwargs):
+        submissions = ExamSubmission.objects.all()
+        serializer = ExamSubmissionSerializer(submissions, many=True)
+        response_data = [
+            {
+                'id': submission.id,
+                'quiz_id': submission.quiz.id,
+                'user_id': submission.user.id,
+                'correct_answers': submission.correct_answers,
+                'score_percentage': submission.score_percentage,
+                'submission_date': submission.submission_date,
+                'time_taken': submission.time_taken,
+                'total_questions': submission.total_questions,
+                'answers': submission.get_answers()
+            } for submission in submissions
+        ]
+        return Response(response_data, status=status.HTTP_200_OK)
+
+class ExamSubmissionByUserAPIView(APIView):
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('user_id', openapi.IN_PATH, description="User ID", type=openapi.TYPE_INTEGER)
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=response_schema
+            ),
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )
+        },
+        operation_description="Retrieve all exam submissions for a specific user."
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        submissions = ExamSubmission.objects.filter(user_id=user_id)
+        if not submissions.exists():
+            return Response({'error': 'No submissions found for this user'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ExamSubmissionSerializer(submissions, many=True)
+        response_data = [
+            {
+                'id': submission.id,
+                'quiz_id': submission.quiz.id,
+                'user_id': submission.user.id,
+                'correct_answers': submission.correct_answers,
+                'score_percentage': submission.score_percentage,
+                'submission_date': submission.submission_date,
+                'time_taken': submission.time_taken,
+                'total_questions': submission.total_questions,
+                'answers': submission.get_answers()
+            } for submission in submissions
+        ]
+        return Response(response_data, status=status.HTTP_200_OK)
+
+class ExamSubmissionByQuizAPIView(APIView):
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('quiz_id', openapi.IN_PATH, description="Quiz ID", type=openapi.TYPE_INTEGER)
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=response_schema
+            ),
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )
+        },
+        operation_description="Retrieve all exam submissions for a specific quiz."
+    )
+    def get(self, request, quiz_id, *args, **kwargs):
+        submissions = ExamSubmission.objects.filter(quiz_id=quiz_id)
+        if not submissions.exists():
+            return Response({'error': 'No submissions found for this quiz'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ExamSubmissionSerializer(submissions, many=True)
+        response_data = [
+            {
+                'id': submission.id,
+                'quiz_id': submission.quiz.id,
+                'user_id': submission.user.id,
+                'correct_answers': submission.correct_answers,
+                'score_percentage': submission.score_percentage,
+                'submission_date': submission.submission_date,
+                'time_taken': submission.time_taken,
+                'total_questions': submission.total_questions,
+                'answers': submission.get_answers()
+            } for submission in submissions
+        ]
+        return Response(response_data, status=status.HTTP_200_OK)
+
+class ExamSubmissionDetailAPIView(APIView):
+    permission_classes = [AllowAny]  # Adjust as needed
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_PATH, description="Submission ID", type=openapi.TYPE_INTEGER)
+        ],
+        responses={
+            200: response_schema,
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )
+        },
+        operation_description="Retrieve a single exam submission by ID."
+    )
+    def get(self, request, id, *args, **kwargs):
+        try:
+            submission = ExamSubmission.objects.get(id=id)
+        except ExamSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found'}, status=status.HTTP_404_NOT_FOUND)
+        response_data = {
+            'id': submission.id,
+            'quiz_id': submission.quiz.id,
+            'user_id': submission.user.id,
+            'correct_answers': submission.correct_answers,
+            'score_percentage': submission.score_percentage,
+            'submission_date': submission.submission_date,
+            'time_taken': submission.time_taken,
+            'total_questions': submission.total_questions,
+            'answers': submission.get_answers()
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        request_body=request_body_schema,
+        responses={
+            200: response_schema,
+            400: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            ),
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )
+        },
+        operation_description="Update an existing exam submission by ID."
+    )
+    def put(self, request, id, *args, **kwargs):
+        try:
+            submission = ExamSubmission.objects.get(id=id)
+        except ExamSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ExamSubmissionSerializer(submission, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_submission = serializer.save()
+            response_data = {
+                'id': updated_submission.id,
+                'quiz_id': updated_submission.quiz.id,
+                'user_id': updated_submission.user.id,
+                'correct_answers': updated_submission.correct_answers,
+                'score_percentage': updated_submission.score_percentage,
+                'submission_date': updated_submission.submission_date,
+                'time_taken': updated_submission.time_taken,
+                'total_questions': updated_submission.total_questions,
+                'answers': updated_submission.get_answers()
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        responses={
+            204: openapi.Schema(type=openapi.TYPE_OBJECT, properties={}),
+            404: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={'error': openapi.Schema(type=openapi.TYPE_STRING)}
+            )
+        },
+        operation_description="Delete an exam submission by ID."
+    )
+    def delete(self, request, id, *args, **kwargs):
+        try:
+            submission = api_models.ExamSubmission.objects.get(id=id)
+        except ExamSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found'}, status=status.HTTP_404_NOT_FOUND)
+        submission.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
