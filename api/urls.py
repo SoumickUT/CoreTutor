@@ -171,6 +171,7 @@ urlpatterns = [
     path('student-sections/<int:id>/update/', api_views.StudentSectionUpdateView.as_view(), name='student-section-update'),
     path('student-sections/<int:id>/delete/', api_views.StudentSectionDeleteView.as_view(), name='student-section-delete'),
     path('student-sections/create/', api_views.StudentSectionCreateView.as_view(), name='student-section-create'),
+    path('student-sections/user/<int:user_id>/', api_views.StudentSectionByUserView.as_view(), name='student-section-by-user'),
     
     path('exam-submissions/', api_views.ExamSubmissionCreateAPIView.as_view(), name='exam_submission_create'),
     path('exam-submissions/all/', api_views.ExamSubmissionListAPIView.as_view(), name='exam_submission_list'),

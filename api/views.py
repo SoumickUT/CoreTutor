@@ -2198,6 +2198,7 @@ class TeacherDetailView(APIView):
 
 
 class UserListView(generics.ListAPIView):
+    permission_classes = [AllowAny]
     # permission_classes = [AllowAny]  # Allow unauthenticated access
     queryset = User.objects.all()
     serializer_class = api_serializer.UserSerializer
@@ -2312,6 +2313,7 @@ class GroupUpdateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class GroupListView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request, *args, **kwargs):
         groups = api_models.Group.objects.all()
         serializer = GroupSerializer(groups, many=True)
@@ -4093,6 +4095,42 @@ class EventDeleteView(generics.DestroyAPIView):
     lookup_field = 'id'
     
     
+# class StudentSectionCreateView(generics.CreateAPIView):
+#     permission_classes = [AllowAny]
+#     queryset = api_models.StudentSection.objects.all()
+#     serializer_class = api_serializer.StudentSectionSerializer
+
+#     def create(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         self.perform_create(serializer)
+#         headers = self.get_success_headers(serializer.data)
+#         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+# class StudentSectionListView(generics.ListAPIView):
+#     permission_classes = [AllowAny]
+#     queryset = api_models.StudentSection.objects.all()
+#     serializer_class = api_serializer.StudentSectionSerializer
+
+# class StudentSectionRetrieveView(generics.RetrieveAPIView):
+#     permission_classes = [AllowAny]
+#     queryset = api_models.StudentSection.objects.all()
+#     serializer_class = api_serializer.StudentSectionSerializer
+#     lookup_field = 'id'
+
+# class StudentSectionUpdateView(generics.UpdateAPIView):
+#     permission_classes = [AllowAny]
+#     queryset = api_models.StudentSection.objects.all()
+#     serializer_class = api_serializer.StudentSectionSerializer
+#     lookup_field = 'id'
+
+# class StudentSectionDeleteView(generics.DestroyAPIView):
+#     permission_classes = [AllowAny]
+#     queryset = api_models.StudentSection.objects.all()
+#     serializer_class = api_serializer.StudentSectionSerializer
+#     lookup_field = 'id'
+    
+
 class StudentSectionCreateView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     queryset = api_models.StudentSection.objects.all()
@@ -4122,13 +4160,27 @@ class StudentSectionUpdateView(generics.UpdateAPIView):
     serializer_class = api_serializer.StudentSectionSerializer
     lookup_field = 'id'
 
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
 class StudentSectionDeleteView(generics.DestroyAPIView):
     permission_classes = [AllowAny]
     queryset = api_models.StudentSection.objects.all()
     serializer_class = api_serializer.StudentSectionSerializer
     lookup_field = 'id'
-    
-    
+
+class StudentSectionByUserView(generics.ListAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = api_serializer.StudentSectionSerializer
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        return api_models.StudentSection.objects.filter(user__id=user_id)
 
 # Base response schema for consistency
 response_schema = openapi.Schema(

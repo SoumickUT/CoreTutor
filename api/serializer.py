@@ -1020,10 +1020,11 @@ class EventSerializer(serializers.ModelSerializer):
         
         
 class StudentSectionSerializer(serializers.ModelSerializer):
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), allow_null=True)
+    
     class Meta:
         model = api_models.StudentSection
-        fields = ['id', 'title', 'description', 'image', 'create_date', 'status']
-        
+        fields = ['id', 'title', 'description', 'image', 'create_date', 'status', 'user']
         
 class ExamSubmissionSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)  # Added for retrieval

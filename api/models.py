@@ -606,6 +606,7 @@ class StudentSection(models.Model):
     image = models.FileField(upload_to="student-section-file", default="student_section.jpg", null=True, blank=True)
     create_date = models.DateTimeField(auto_now_add=True)
     slug = models.SlugField(unique=True, null=True, blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)  # Allow null for now
     status = models.CharField(max_length=20, choices=[('ACTIVE', 'Active'), ('INACTIVE', 'Inactive')], default='ACTIVE')
 
     def __str__(self):
