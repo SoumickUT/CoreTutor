@@ -637,3 +637,49 @@ class ExamSubmission(models.Model):
     class Meta:
         verbose_name = "Exam Submission"
         verbose_name_plural = "Exam Submissions"
+        
+        
+class Notice(models.Model):
+    CATEGORY_CHOICES = [
+        ('general', 'General'),
+        ('academic', 'Academic'),
+        ('event', 'Event'),
+        ('announcement', 'Announcement'),
+        ('maintenance', 'Maintenance'),
+    ]
+
+    id = models.CharField(max_length=50, primary_key=True, unique=True)
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    publish_date = models.DateTimeField()
+    expiry_date = models.DateTimeField(null=True, blank=True)
+    important = models.BooleanField(default=False)
+    attachment_url = models.URLField(max_length=500, null=True, blank=True)
+    attachment_name = models.CharField(max_length=255, null=True, blank=True)
+
+    def __str__(self):
+        return self.title
+    
+
+class Notice(models.Model):
+    CATEGORY_CHOICES = [
+        ('general', 'General'),
+        ('academic', 'Academic'),
+        ('event', 'Event'),
+        ('announcement', 'Announcement'),
+        ('maintenance', 'Maintenance'),
+    ]
+
+    id = models.CharField(max_length=50, primary_key=True, unique=True)
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    publish_date = models.DateTimeField()
+    expiry_date = models.DateTimeField(null=True, blank=True)
+    important = models.BooleanField(default=False)
+    attachment_url = models.FileField(upload_to="notice-section-file", default="notice_section.jpg", null=True, blank=True)
+    attachment_name = models.CharField(max_length=255, null=True, blank=True)
+
+    def __str__(self):
+        return self.title

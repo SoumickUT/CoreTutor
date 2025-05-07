@@ -1106,3 +1106,21 @@ class ExamSubmissionSerializer(serializers.Serializer):
         instance.save()
         return instance
     
+    
+class NoticeSerializer(serializers.ModelSerializer):
+    attachment_url = serializers.FileField(required=False, allow_null=True)
+
+    class Meta:
+        model = api_models.Notice
+        fields = ['id', 'title', 'content', 'category', 'publish_date', 'expiry_date', 'important', 'attachment_url', 'attachment_name']
+
+    def validate_attachment_url(self, value):
+        if value:
+            # Optional: Add file type or size validation
+            allowed_extensions = ['jpg', 'jpeg', 'png', 'pdf']
+            extension = value.name.split('.')[-1].lower()
+            if extension not in allowed_extensions:
+                raise serializers.ValidationError("File type not allowed. Use JPG, JPEG, PNG, or PDF.")
+            if value.size > 5 * 1024 * 1024:  # 5MB limit
+                raise serializers.ValidationError("File size exceeds 5MB limit.")
+        return value
