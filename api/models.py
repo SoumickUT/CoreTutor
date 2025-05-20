@@ -2,11 +2,12 @@ from django.db import models
 from django.utils.text import slugify
 from django.utils import timezone
 from moviepy import VideoFileClip
-
+import re
 from userauths.models import User, Profile
 from shortuuid.django_fields import ShortUUIDField
 import math
 import json
+from django.core.exceptions import ValidationError
 
 LANGUAGE = (
     ("English", "English"),
@@ -683,3 +684,156 @@ class Notice(models.Model):
 
     def __str__(self):
         return self.title
+    
+    
+######################################################
+
+def validate_file_size(value):
+    max_size = 5 * 1024 * 1024  # 5MB
+    if value.size > max_size:
+        raise ValidationError("File size must be less than 5MB.")
+
+def validate_file_type(value):
+    allowed_types = ['image/png', 'image/jpeg', 'image/svg+xml']
+    if value.content_type not in allowed_types:
+        raise ValidationError("File must be PNG, JPEG, or SVG.")
+
+class Passage(models.Model):
+    title = models.CharField(max_length=255)
+    text = models.TextField()
+    time_limit = models.PositiveIntegerField(default=600)  # seconds
+    created_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return self.title
+
+class MCQQuestion(models.Model):
+    passage = models.ForeignKey(Passage, related_name='mcq_questions', on_delete=models.CASCADE)
+    question_text = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return self.question_text
+
+class MCQAnswer(models.Model):
+    question = models.ForeignKey(MCQQuestion, related_name='mcq_answers', on_delete=models.CASCADE)
+    answer_text = models.CharField(max_length=255)
+    is_right = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.answer_text
+
+class WrittenQuestion(models.Model):
+    QUESTION_TYPES = (
+        ('short', 'Short Response'),
+        ('long', 'Long Response'),
+        ('math_short', 'Math Short Response'),
+        ('math_long', 'Math Long Response'),
+    )
+    passage = models.ForeignKey(Passage, related_name='written_questions', on_delete=models.CASCADE)
+    question_text = models.TextField()
+    question_file = models.FileField(
+        upload_to='questions/',
+        null=True,
+        blank=True,
+        validators=[validate_file_size, validate_file_type]
+    )
+    question_format = models.CharField(max_length=10, choices=(('text', 'Text'), ('latex', 'LaTeX')), default='text')
+    question_type = models.CharField(max_length=20, choices=QUESTION_TYPES)
+    max_points = models.PositiveIntegerField()
+    accepted_formats = models.JSONField(default=list)  # e.g., ["text"], ["latex", "file"]
+    created_at = models.DateTimeField(default=timezone.now)
+
+    def clean(self):
+        if self.question_type in ['short', 'math_short'] and self.max_points != 2:
+            raise ValidationError("Short/math_short questions must have max_points=2.")
+        if self.question_type in ['long', 'math_long'] and self.max_points != 4:
+            raise ValidationError("Long/math_long questions must have max_points=4.")
+        if self.question_type in ['short', 'long'] and 'file' in self.accepted_formats:
+            raise ValidationError("File uploads not allowed for short/long questions.")
+        if self.question_type in ['short', 'long'] and 'latex' in self.accepted_formats:
+            raise ValidationError("LaTeX not allowed for short/long questions.")
+        if self.question_file and 'file' not in self.accepted_formats:
+            raise ValidationError("Question file not allowed for this question type.")
+
+    def __str__(self):
+        return self.question_text
+
+class PassageSubmission(models.Model):
+    passage = models.ForeignKey(Passage, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    score = models.PositiveIntegerField(default=0)  # MCQ score
+    submission_date = models.DateTimeField(default=timezone.now)
+    time_taken = models.PositiveIntegerField()
+
+    class Meta:
+        unique_together = ('passage', 'user')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.passage.title}"
+
+class WrittenPassageSubmission(models.Model):
+    passage_submission = models.OneToOneField(
+        PassageSubmission,
+        on_delete=models.CASCADE,
+        related_name='written_passage_submission'  # Explicit reverse accessor
+    )
+    written_score = models.PositiveIntegerField(default=0)
+    is_fully_reviewed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Written: {self.passage_submission}"
+
+class MCQSubmission(models.Model):
+    passage_submission = models.ForeignKey(PassageSubmission, related_name='mcq_submissions', on_delete=models.CASCADE)
+    question = models.ForeignKey(MCQQuestion, on_delete=models.CASCADE)
+    selected_answer = models.ForeignKey(MCQAnswer, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ('passage_submission', 'question')
+
+    def __str__(self):
+        return f"{self.passage_submission} - {self.question}"
+
+class WrittenSubmission(models.Model):
+    written_passage_submission = models.ForeignKey(WrittenPassageSubmission, related_name='written_submissions', on_delete=models.CASCADE)
+    question = models.ForeignKey(WrittenQuestion, on_delete=models.CASCADE)
+    answer_text = models.TextField()
+    answer_file = models.FileField(
+        upload_to='submissions/',
+        null=True,
+        blank=True,
+        validators=[validate_file_size, validate_file_type]
+    )
+    format = models.CharField(max_length=10, choices=(('text', 'Text'), ('latex', 'LaTeX')), default='text')
+    score = models.PositiveIntegerField(null=True, blank=True)
+    review = models.TextField(null=True, blank=True)
+    reviewed = models.BooleanField(default=False)
+    graded_by = models.ForeignKey(Teacher, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        unique_together = ('written_passage_submission', 'question')
+
+    def clean(self):
+        if self.question.question_type in ['short', 'long']:
+            if self.format != 'text':
+                raise ValidationError("Only text format allowed for short/long questions.")
+            if self.answer_file:
+                raise ValidationError("File uploads not allowed for short/long questions.")
+            sentences = re.split(r'[.!?]+', self.answer_text.strip())
+            sentences = [s.strip() for s in sentences if s.strip()]
+            if self.question.question_type == 'short' and not (1 <= len(sentences) <= 3):
+                raise ValidationError("Short response must have 1–3 sentences.")
+            if self.question.question_type == 'long' and not (4 <= len(sentences) <= 6):
+                raise ValidationError("Long response must have 4–6 sentences.")
+        if self.format not in self.question.accepted_formats:
+            raise ValidationError(f"Format '{self.format}' not allowed for this question.")
+        if self.answer_file and 'file' not in self.question.accepted_formats:
+            raise ValidationError("File upload not allowed for this question.")
+        if self.score is not None:
+            max_points = self.question.max_points
+            if not (0 <= self.score <= max_points):
+                raise ValidationError(f"Score must be between 0 and {max_points}.")
+
+    def __str__(self):
+        return f"{self.written_passage_submission} - {self.question}"

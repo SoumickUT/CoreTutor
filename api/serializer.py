@@ -1,10 +1,13 @@
 from django.contrib.auth.password_validation import validate_password
 from api import models as api_models
-
+from api.models import (
+    Passage, MCQQuestion, MCQAnswer, WrittenQuestion,
+    PassageSubmission, MCQSubmission, WrittenPassageSubmission, WrittenSubmission, Teacher
+)
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import ValidationError
-
+import re
 from userauths.models import Profile, User
 
 # class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -1124,3 +1127,527 @@ class NoticeSerializer(serializers.ModelSerializer):
             if value.size > 5 * 1024 * 1024:  # 5MB limit
                 raise serializers.ValidationError("File size exceeds 5MB limit.")
         return value
+    
+
+###############################################
+
+class MCQAnswerSerializer(serializers.ModelSerializer):
+    answer_id = serializers.IntegerField(source='id', read_only=True)
+    answer_text = serializers.CharField()
+    is_right = serializers.BooleanField(write_only=True)
+
+    class Meta:
+        model = MCQAnswer
+        fields = ['answer_id', 'answer_text', 'is_right']
+
+class MCQQuestionSerializer(serializers.ModelSerializer):
+    question_id = serializers.IntegerField(source='id', read_only=True)
+    question_text = serializers.CharField()
+    mcq_answers = MCQAnswerSerializer(many=True)
+
+    class Meta:
+        model = MCQQuestion
+        fields = ['question_id', 'question_text', 'mcq_answers']
+
+    def validate_mcq_answers(self, value):
+        if len(value) != 4:
+            raise serializers.ValidationError("Each MCQ question must have exactly 4 answers.")
+        if sum(1 for answer in value if answer.get('is_right')) != 1:
+            raise serializers.ValidationError("Exactly one answer must be marked as correct.")
+        return value
+
+class WrittenQuestionSerializer(serializers.ModelSerializer):
+    question_id = serializers.IntegerField(source='id', read_only=True)
+    question_text = serializers.CharField()
+    question_file = serializers.FileField(allow_null=True, required=False)
+    question_file_url = serializers.SerializerMethodField()
+    question_format = serializers.ChoiceField(choices=['text', 'latex'], default='text')
+    question_type = serializers.ChoiceField(choices=['short', 'long', 'math_short', 'math_long'])
+    max_points = serializers.IntegerField()
+    accepted_formats = serializers.ListField(child=serializers.ChoiceField(choices=['text', 'latex', 'file']))
+
+    class Meta:
+        model = WrittenQuestion
+        fields = [
+            'question_id', 'question_text', 'question_file', 'question_file_url',
+            'question_format', 'question_type', 'max_points', 'accepted_formats'
+        ]
+
+    def get_question_file_url(self, obj):
+        return obj.question_file.url if obj.question_file else None
+
+    def validate(self, data):
+        question_type = data.get('question_type')
+        max_points = data.get('max_points')
+        accepted_formats = data.get('accepted_formats', [])
+        question_file = data.get('question_file')
+
+        if question_type in ['short', 'math_short'] and max_points != 2:
+            raise serializers.ValidationError("Short/math_short questions must have max_points=2.")
+        if question_type in ['long', 'math_long'] and max_points != 4:
+            raise serializers.ValidationError("Long/math_long questions must have max_points=4.")
+        if question_type in ['short', 'long']:
+            if 'file' in accepted_formats:
+                raise serializers.ValidationError("File uploads not allowed for short/long questions.")
+            if 'latex' in accepted_formats:
+                raise serializers.ValidationError("LaTeX not allowed for short/long questions.")
+        if question_file and 'file' not in accepted_formats:
+            raise serializers.ValidationError("Question file not allowed for this question type.")
+        return data
+
+class PassageSerializer(serializers.ModelSerializer):
+    mcq_questions = MCQQuestionSerializer(many=True)
+    written_questions = WrittenQuestionSerializer(many=True)
+
+    class Meta:
+        model = Passage
+        fields = ['id', 'title', 'text', 'created_at', 'time_limit', 'mcq_questions', 'written_questions']
+
+    def create(self, validated_data):
+        mcq_questions_data = validated_data.pop('mcq_questions')
+        written_questions_data = validated_data.pop('written_questions')
+        passage = Passage.objects.create(**validated_data)
+
+        for mcq_data in mcq_questions_data:
+            answers_data = mcq_data.pop('mcq_answers')
+            mcq_question = MCQQuestion.objects.create(passage=passage, **mcq_data)
+            for answer_data in answers_data:
+                MCQAnswer.objects.create(question=mcq_question, **answer_data)
+
+        for written_data in written_questions_data:
+            WrittenQuestion.objects.create(passage=passage, **written_data)
+
+        return passage
+
+    def update(self, instance, validated_data):
+        mcq_questions_data = validated_data.pop('mcq_questions', [])
+        written_questions_data = validated_data.pop('written_questions', [])
+
+        instance.title = validated_data.get('title', instance.title)
+        instance.text = validated_data.get('text', instance.text)
+        instance.time_limit = validated_data.get('time_limit', instance.time_limit)
+        instance.save()
+
+        existing_mcq_ids = {q.question_id for q in mcq_questions_data if 'question_id' in q}
+        instance.mcq_questions.exclude(id__in=existing_mcq_ids).delete()
+        for mcq_data in mcq_questions_data:
+            answers_data = mcq_data.pop('mcq_answers')
+            if 'question_id' in mcq_data:
+                mcq_question = MCQQuestion.objects.get(id=mcq_data['question_id'], passage=instance)
+                mcq_question.question_text = mcq_data.get('question_text', mcq_question.question_text)
+                mcq_question.save()
+                mcq_question.mcq_answers.all().delete()
+            else:
+                mcq_question = MCQQuestion.objects.create(passage=instance, **mcq_data)
+            for answer_data in answers_data:
+                MCQAnswer.objects.create(question=mcq_question, **answer_data)
+
+        existing_written_ids = {q['question_id'] for q in written_questions_data if 'question_id' in q}
+        instance.written_questions.exclude(id__in=existing_written_ids).delete()
+        for written_data in written_questions_data:
+            if 'question_id' in written_data:
+                written_question = WrittenQuestion.objects.get(id=written_data['question_id'], passage=instance)
+                for field in ['question_text', 'question_file', 'question_format', 'question_type', 'max_points', 'accepted_formats']:
+                    setattr(written_question, field, written_data.get(field, getattr(written_question, field)))
+                written_question.save()
+            else:
+                WrittenQuestion.objects.create(passage=instance, **written_data)
+
+        return instance
+
+class MCQSubmissionSerializer(serializers.Serializer):
+    question_id = serializers.IntegerField()
+    answer_id = serializers.IntegerField()
+
+class WrittenSubmissionSerializer(serializers.Serializer):
+    question_id = serializers.IntegerField()
+    answer_text = serializers.CharField()
+    answer_file = serializers.FileField(allow_null=True, required=False)
+    format = serializers.ChoiceField(choices=['text', 'latex'], default='text')
+
+    def validate(self, data):
+        question_id = data.get('question_id')
+        try:
+            question = WrittenQuestion.objects.get(id=question_id)
+        except WrittenQuestion.DoesNotExist:
+            raise serializers.ValidationError(f"Question ID {question_id} does not exist.")
+
+        if question.question_type in ['short', 'long']:
+            if data.get('format') != 'text':
+                raise serializers.ValidationError("Only text format allowed for short/long questions.")
+            if data.get('answer_file'):
+                raise serializers.ValidationError("File uploads not allowed for short/long questions.")
+            sentences = re.split(r'[.!?]+', data.get('answer_text').strip())
+            sentences = [s.strip() for s in sentences if s.strip()]
+            if question.question_type == 'short' and not (1 <= len(sentences) <= 3):
+                raise serializers.ValidationError("Short response must have 1–3 sentences.")
+            if question.question_type == 'long' and not (4 <= len(sentences) <= 6):
+                raise serializers.ValidationError("Long response must have 4–6 sentences.")
+        if data.get('format') not in question.accepted_formats:
+            raise serializers.ValidationError(f"Format '{data.get('format')}' not allowed for question ID {question_id}.")
+        if data.get('answer_file') and 'file' not in question.accepted_formats:
+            raise serializers.ValidationError("File upload not allowed for question ID {question_id}.")
+        return data
+
+class SubmissionSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    submissions = MCQSubmissionSerializer(many=True)
+    written_answers = WrittenSubmissionSerializer(many=True)
+    time_taken = serializers.IntegerField()
+
+    def validate(self, data):
+        passage_id = self.context['view'].kwargs['pk']
+        try:
+            passage = Passage.objects.get(id=passage_id)
+        except Passage.DoesNotExist:
+            raise serializers.ValidationError("Passage not found.")
+
+        if data['time_taken'] > passage.time_limit:
+            raise serializers.ValidationError(f"Time taken ({data['time_taken']}s) exceeds passage time limit ({passage.time_limit}s).")
+
+        expected_mcq_count = passage.mcq_questions.count()
+        expected_written_count = passage.written_questions.count()
+        if len(data['submissions']) != expected_mcq_count:
+            raise serializers.ValidationError(f"Expected {expected_mcq_count} MCQ submissions, got {len(data['submissions'])}.")
+        if len(data['written_answers']) != expected_written_count:
+            raise serializers.ValidationError(f"Expected {expected_written_count} written submissions, got {len(data['written_answers'])}.")
+
+        mcq_question_ids = set(passage.mcq_questions.values_list('id', flat=True))
+        for sub in data['submissions']:
+            if sub['question_id'] not in mcq_question_ids:
+                raise serializers.ValidationError(f"Invalid MCQ question ID {sub['question_id']}.")
+            try:
+                MCQAnswer.objects.get(id=sub['answer_id'], question_id=sub['question_id'])
+            except MCQAnswer.DoesNotExist:
+                raise serializers.ValidationError(f"Invalid answer ID {sub['answer_id']} for question ID {sub['question_id']}.")
+
+        written_question_ids = set(passage.written_questions.values_list('id', flat=True))
+        for sub in data['written_answers']:
+            if sub['question_id'] not in written_question_ids:
+                raise serializers.ValidationError(f"Invalid written question ID {sub['question_id']}.")
+
+        return data
+
+class MCQResultSerializer(serializers.Serializer):
+    question_id = serializers.IntegerField()
+    question_text = serializers.CharField(source='question.question_text')
+    selected_answer_id = serializers.IntegerField(source='selected_answer.id')
+    selected_answer_text = serializers.CharField(source='selected_answer.answer_text')
+    is_correct = serializers.BooleanField(source='selected_answer.is_right')
+    correct_answer_text = serializers.SerializerMethodField()
+
+    def get_correct_answer_text(self, obj):
+        correct_answer = obj.question.mcq_answers.filter(is_right=True).first()
+        return correct_answer.answer_text if correct_answer else None
+
+
+class WrittenResultSerializer(serializers.ModelSerializer):
+    submission_id = serializers.IntegerField(source='id')
+    question_id = serializers.IntegerField(source='question.id')
+    question_text = serializers.CharField(source='question.question_text')
+    question_file_url = serializers.SerializerMethodField()
+    question_format = serializers.CharField(source='question.question_format')
+    answer_file_url = serializers.SerializerMethodField()
+    grade = serializers.SerializerMethodField()
+    graded_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WrittenSubmission
+        fields = [
+            'submission_id', 'question_id', 'question_text', 'question_file_url', 'question_format',
+            'answer_text', 'answer_file_url', 'format', 'grade', 'reviewed', 'review', 'graded_by'
+        ]
+
+    def get_question_file_url(self, obj):
+        return obj.question.question_file.url if obj.question.question_file else None
+
+    def get_answer_file_url(self, obj):
+        return obj.answer_file.url if obj.answer_file else None
+
+    def get_grade(self, obj):
+        if obj.score is None:
+            return None
+        if obj.question.max_points == 2:
+            return {2: 'A+', 1: 'B+', 0: 'F'}.get(obj.score)
+        return {4: 'A+', 3: 'A', 2: 'B+', 1: 'B', 0: 'F'}.get(obj.score)
+
+    def get_graded_by(self, obj):
+        if obj.graded_by:
+            return {
+                'id': obj.graded_by.id,
+                'full_name': obj.graded_by.full_name,
+                'email': obj.graded_by.user.email
+            }
+        return None
+
+class SubmissionResultSerializer(serializers.Serializer):
+    mcq_results = serializers.SerializerMethodField()
+    written_results = serializers.SerializerMethodField()
+    combined_results = serializers.SerializerMethodField()
+
+    def get_mcq_results(self, obj):
+        mcq_submissions = obj.mcq_submissions.all()
+        total_questions = obj.passage.mcq_questions.count()
+        score = sum(1 for sub in mcq_submissions if sub.selected_answer.is_right)
+        return {
+            'score': score,
+            'total_questions': total_questions,
+            'score_percentage': (score / total_questions * 100) if total_questions else 0,
+            'submission_date': obj.submission_date,
+            'time_taken': obj.time_taken,
+            'results': MCQResultSerializer(mcq_submissions, many=True).data
+        }
+
+    def get_written_results(self, obj):
+        try:
+            written_passage_submission = obj.written_passage_submission
+            written_submissions = written_passage_submission.written_submissions.all()
+            written_score = written_passage_submission.written_score
+            is_fully_reviewed = written_passage_submission.is_fully_reviewed
+        except WrittenPassageSubmission.DoesNotExist:
+            written_submissions = []
+            written_score = 0
+            is_fully_reviewed = False
+
+        total_written_points = sum(q.max_points for q in obj.passage.written_questions.all())
+        written_percentage = (written_score / total_written_points * 100) if total_written_points else 0.0
+        # Simplified grade lookup
+        written_percentage = min(max(written_percentage, 0), 100)
+        if written_percentage >= 90:
+            written_grade = 'A+'
+        elif written_percentage >= 80:
+            written_grade = 'A'
+        elif written_percentage >= 70:
+            written_grade = 'B+'
+        elif written_percentage >= 60:
+            written_grade = 'B'
+        else:
+            written_grade = 'F'
+
+        return {
+            'written_score': written_score,
+            'total_written_points': total_written_points,
+            'written_score_percentage': written_percentage,
+            'written_grade': written_grade,
+            'is_fully_reviewed': is_fully_reviewed,
+            'submission_date': obj.submission_date,
+            'time_taken': obj.time_taken,
+            'written_submissions': WrittenResultSerializer(written_submissions, many=True).data
+        }
+
+    def get_combined_results(self, obj):
+        mcq_score = sum(1 for sub in obj.mcq_submissions.all() if sub.selected_answer.is_right)
+        try:
+            written_score = obj.written_passage_submission.written_score
+            is_fully_reviewed = obj.written_passage_submission.is_fully_reviewed
+        except WrittenPassageSubmission.DoesNotExist:
+            written_score = 0
+            is_fully_reviewed = False
+
+        total_score = mcq_score + written_score
+        total_points = obj.passage.mcq_questions.count() + sum(q.max_points for q in obj.passage.written_questions.all())
+        total_percentage = (total_score / total_points * 100) if total_points else 0.0
+        # Simplified grade lookup
+        total_percentage = min(max(total_percentage, 0), 100)
+        if total_percentage >= 90:
+            total_grade = 'A+'
+        elif total_percentage >= 80:
+            total_grade = 'A'
+        elif total_percentage >= 70:
+            total_grade = 'B+'
+        elif total_percentage >= 60:
+            total_grade = 'B'
+        else:
+            total_grade = 'F'
+
+        return {
+            'total_score': total_score,
+            'total_points': total_points,
+            'total_score_percentage': total_percentage,
+            'total_grade': total_grade,
+            'is_fully_reviewed': is_fully_reviewed
+        }
+
+        
+class GradeSubmissionSerializer(serializers.Serializer):
+    submission_id = serializers.IntegerField()
+    score = serializers.IntegerField()
+    review = serializers.CharField(allow_null=True, required=False)
+    teacher_id = serializers.IntegerField()
+
+    def validate(self, data):
+        # Validate submission_id
+        try:
+            submission = WrittenSubmission.objects.get(id=data['submission_id'])
+        except WrittenSubmission.DoesNotExist:
+            raise serializers.ValidationError("Submission not found.")
+
+        # Check if submission is already reviewed
+        if submission.reviewed:
+            raise serializers.ValidationError("Submission already reviewed.")
+
+        # Validate score
+        max_points = submission.question.max_points
+        if not (0 <= data['score'] <= max_points):
+            raise serializers.ValidationError(f"Score must be between 0 and {max_points}.")
+
+        # Validate teacher_id
+        try:
+            teacher = Teacher.objects.get(id=data['teacher_id'])
+        except Teacher.DoesNotExist:
+            raise serializers.ValidationError("Teacher not found.")
+
+        # Attach teacher to validated data
+        data['teacher'] = teacher
+        return data
+
+class AdminSubmissionSerializer(serializers.Serializer):
+    passage_id = serializers.IntegerField(source='passage.id')
+    passage_title = serializers.CharField(source='passage.title')
+    user_email = serializers.CharField(source='user.email')
+    mcq_score = serializers.IntegerField()
+    mcq_total_questions = serializers.IntegerField()
+    mcq_score_percentage = serializers.FloatField()
+    written_score = serializers.IntegerField()
+    written_total_points = serializers.IntegerField()
+    written_score_percentage = serializers.FloatField()
+    written_grade = serializers.CharField()
+    total_score = serializers.IntegerField()
+    total_points = serializers.IntegerField()
+    total_score_percentage = serializers.FloatField()
+    total_grade = serializers.CharField()
+    is_fully_reviewed = serializers.BooleanField()
+    submission_date = serializers.DateTimeField()
+    time_taken = serializers.IntegerField()
+
+    def to_representation(self, instance):
+        mcq_score = sum(1 for sub in instance.mcq_submissions.all() if sub.selected_answer.is_right)
+        mcq_total_questions = instance.passage.mcq_questions.count()
+        mcq_percentage = (mcq_score / mcq_total_questions * 100) if mcq_total_questions else 0.0
+        try:
+            written_passage_submission = instance.written_passage_submission
+            written_score = written_passage_submission.written_score
+            is_fully_reviewed = written_passage_submission.is_fully_reviewed
+        except WrittenPassageSubmission.DoesNotExist:
+            written_score = 0
+            is_fully_reviewed = False
+        written_total_points = sum(q.max_points for q in instance.passage.written_questions.all())
+        written_percentage = (written_score / written_total_points * 100) if written_total_points else 0.0
+        # Simplified grade lookup
+        written_percentage = min(max(written_percentage, 0), 100)
+        if written_percentage >= 90:
+            written_grade = 'A+'
+        elif written_percentage >= 80:
+            written_grade = 'A'
+        elif written_percentage >= 70:
+            written_grade = 'B+'
+        elif written_percentage >= 60:
+            written_grade = 'B'
+        else:
+            written_grade = 'F'
+
+        total_score = mcq_score + written_score
+        total_points = mcq_total_questions + written_total_points
+        total_percentage = (total_score / total_points * 100) if total_points else 0.0
+        # Simplified grade lookup
+        total_percentage = min(max(total_percentage, 0), 100)
+        if total_percentage >= 90:
+            total_grade = 'A+'
+        elif total_percentage >= 80:
+            total_grade = 'A'
+        elif total_percentage >= 70:
+            total_grade = 'B+'
+        elif total_percentage >= 60:
+            total_grade = 'B'
+        else:
+            total_grade = 'F'
+
+        return {
+            'passage_id': instance.passage.id,
+            'passage_title': instance.passage.title,
+            'user_email': instance.user.email,
+            'mcq_score': mcq_score,
+            'mcq_total_questions': mcq_total_questions,
+            'mcq_score_percentage': mcq_percentage,
+            'written_score': written_score,
+            'written_total_points': written_total_points,
+            'written_score_percentage': written_percentage,
+            'written_grade': written_grade,
+            'total_score': total_score,
+            'total_points': total_points,
+            'total_score_percentage': total_percentage,
+            'total_grade': total_grade,
+            'is_fully_reviewed': is_fully_reviewed,
+            'submission_date': instance.submission_date,
+            'time_taken': instance.time_taken
+        }
+
+class StudentPassageSerializer(serializers.ModelSerializer):
+    mcq_questions = serializers.SerializerMethodField()
+    written_questions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Passage
+        fields = ['id', 'title', 'text', 'time_limit', 'mcq_questions', 'written_questions']
+
+    def get_mcq_questions(self, obj):
+        questions = obj.mcq_questions.all()
+        return [{
+            'id': q.id,
+            'question_text': q.question_text,
+            'mcq_answers': [{'id': a.id, 'answer_text': a.answer_text} for a in q.mcq_answers.all()]
+        } for q in questions]
+
+    def get_written_questions(self, obj):
+        questions = obj.written_questions.all()
+        return [{
+            'id': q.id,
+            'question_text': q.question_text,
+            'question_file_url': q.question_file.url if q.question_file else None,
+            'question_format': q.question_format,
+            'question_type': q.question_type,
+            'max_points': q.max_points,
+            'accepted_formats': q.accepted_formats
+        } for q in questions]
+
+class StudentWrittenResultSerializer(WrittenResultSerializer):
+    graded_by = serializers.SerializerMethodField()
+
+    def get_graded_by(self, obj):
+        return {'full_name': obj.graded_by.full_name} if obj.graded_by else None
+
+class StudentSubmissionResultSerializer(SubmissionResultSerializer):
+    def get_written_results(self, obj):
+        try:
+            written_passage_submission = obj.written_passage_submission
+            written_submissions = written_passage_submission.written_submissions.all()
+            written_score = written_passage_submission.written_score
+            is_fully_reviewed = written_passage_submission.is_fully_reviewed
+        except WrittenPassageSubmission.DoesNotExist:
+            written_submissions = []
+            written_score = 0
+            is_fully_reviewed = False
+
+        total_written_points = sum(q.max_points for q in obj.passage.written_questions.all())
+        written_percentage = (written_score / total_written_points * 100) if total_written_points else 0.0
+        # Simplified grade lookup
+        written_percentage = min(max(written_percentage, 0), 100)
+        if written_percentage >= 90:
+            written_grade = 'A+'
+        elif written_percentage >= 80:
+            written_grade = 'A'
+        elif written_percentage >= 70:
+            written_grade = 'B+'
+        elif written_percentage >= 60:
+            written_grade = 'B'
+        else:
+            written_grade = 'F'
+
+        return {
+            'written_score': written_score,
+            'total_written_points': total_written_points,
+            'written_score_percentage': written_percentage,
+            'written_grade': written_grade,
+            'is_fully_reviewed': is_fully_reviewed,
+            'written_submissions': StudentWrittenResultSerializer(written_submissions, many=True).data
+        }

@@ -43,6 +43,20 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework import serializers as drf_serializers
 from django.db.models import Count,Q
+from django.db import transaction
+from django.utils import timezone
+
+from api.models import (
+    Passage, MCQQuestion, MCQAnswer, WrittenQuestion,
+    PassageSubmission, MCQSubmission, WrittenPassageSubmission, WrittenSubmission
+)
+from api.serializer import (
+    PassageSerializer, SubmissionSerializer, SubmissionResultSerializer,
+    GradeSubmissionSerializer, AdminSubmissionSerializer,
+    StudentPassageSerializer, StudentSubmissionResultSerializer,
+    MCQQuestionSerializer, WrittenQuestionSerializer,WrittenResultSerializer)
+
+from django.shortcuts import get_object_or_404
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
@@ -4461,3 +4475,530 @@ class ExamSubmissionDetailAPIView(APIView):
             return Response({'error': 'Submission not found'}, status=status.HTTP_404_NOT_FOUND)
         submission.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    
+    
+####################################################################
+
+class PassageViewSet(viewsets.ModelViewSet):
+    queryset = Passage.objects.all()
+    serializer_class = PassageSerializer
+    permission_classes = [AllowAny]  # Secure admin endpoints
+
+    @swagger_auto_schema(
+        operation_description="List all passages with questions (including question_id) and answers (including answer_id).",
+        responses={200: PassageSerializer(many=True)},
+        security=[{'Bearer': []}],
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Create a new passage with questions, answers, and time limit. Question and answer IDs are not required.",
+        request_body=PassageSerializer,
+        responses={201: PassageSerializer(), 400: openapi.Response(description="Invalid data")},
+        security=[{'Bearer': []}],
+    )
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific passage with its questions (including question_id) and answers (including answer_id).",
+        responses={200: PassageSerializer(), 404: openapi.Response(description="Passage not found")},
+        security=[{'Bearer': []}],
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update a passage, its questions, answers, and time limit. Question and answer IDs are optional for existing items.",
+        request_body=PassageSerializer,
+        responses={200: PassageSerializer(), 400: openapi.Response(description="Invalid data"), 404: openapi.Response(description="Passage not found")},
+        security=[{'Bearer': []}],
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Partially update a passage, its questions, answers, or time limit. Question and answer IDs are optional for existing items.",
+        request_body=PassageSerializer,
+        responses={200: PassageSerializer(), 400: openapi.Response(description="Invalid data"), 404: openapi.Response(description="Passage not found")},
+        security=[{'Bearer': []}],
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Delete a passage and its associated questions and answers.",
+        responses={204: openapi.Response(description="Passage deleted"), 404: openapi.Response(description="Passage not found")},
+        security=[{'Bearer': []}],
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+class StudentPassageListView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a list of available passages for students.",
+        responses={200: PassageSerializer(many=True)},
+    )
+    def get(self, request):
+        passages = Passage.objects.all()
+        serializer = PassageSerializer(passages, many=True)
+        return Response(serializer.data)
+
+class StudentPassageDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a specific passage with its MCQ questions, answers (excluding is_right), and time limit.",
+        responses={
+            200: StudentPassageSerializer(),
+            404: openapi.Response(description="Passage not found"),
+        },
+    )
+    def get(self, request, pk):
+        try:
+            passage = Passage.objects.get(pk=pk)
+            serializer = StudentPassageSerializer(passage)
+            return Response(serializer.data)
+        except Passage.DoesNotExist:
+            return Response({"error": "Passage not found"}, status=status.HTTP_404_NOT_FOUND)
+
+class SubmissionView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Submit answers for a passage's MCQ and written questions, including math terms (LaTeX) and shapes (file uploads). Time taken must not exceed passage's time limit.",
+        request_body=SubmissionSerializer,
+        responses={
+            201: SubmissionResultSerializer(),
+            400: openapi.Response(description="Invalid submission or time limit exceeded"),
+            403: openapi.Response(description="Submission already exists"),
+            404: openapi.Response(description="Passage, question, or user not found"),
+        },
+    )
+    def post(self, request, pk):
+        try:
+            passage = Passage.objects.get(pk=pk)
+        except Passage.DoesNotExist:
+            return Response({"error": "Passage not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = SubmissionSerializer(data=request.data, context={'request': request, 'view': self})
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        user_id = serializer.validated_data['user_id']
+        time_taken = serializer.validated_data['time_taken']
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "Invalid user ID"}, status=status.HTTP_404_NOT_FOUND)
+
+        if passage.time_limit is not None and time_taken > passage.time_limit:
+            return Response({"error": f"Time taken ({time_taken}s) exceeds passage time limit ({passage.time_limit}s)"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if PassageSubmission.objects.filter(user=user, passage=passage).exists():
+            return Response({"error": "User has already submitted answers for this passage"}, status=status.HTTP_403_FORBIDDEN)
+
+        with transaction.atomic():
+            passage_submission = PassageSubmission.objects.create(
+                passage=passage,
+                user=user,
+                time_taken=time_taken
+            )
+            written_passage_submission = WrittenPassageSubmission.objects.create(
+                passage_submission=passage_submission
+            )
+
+            for mcq_sub in serializer.validated_data['submissions']:
+                question = MCQQuestion.objects.get(id=mcq_sub['question_id'])
+                answer = MCQAnswer.objects.get(id=mcq_sub['answer_id'])
+                MCQSubmission.objects.create(
+                    passage_submission=passage_submission,
+                    question=question,
+                    selected_answer=answer
+                )
+                if answer.is_right:
+                    passage_submission.score += 1
+
+            for written_sub in serializer.validated_data['written_answers']:
+                question = WrittenQuestion.objects.get(id=written_sub['question_id'])
+                WrittenSubmission.objects.create(
+                    written_passage_submission=written_passage_submission,
+                    question=question,
+                    answer_text=written_sub['answer_text'],
+                    answer_file=written_sub.get('answer_file'),
+                    format=written_sub['format']
+                )
+
+            passage_submission.save()
+
+        serializer = SubmissionResultSerializer(passage_submission)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+class PassageSubmissionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve passage submission details for a specific user.",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="ID of the user to filter submissions",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: AdminSubmissionSerializer(many=True),
+            400: openapi.Response(description="Missing or invalid user_id"),
+            404: openapi.Response(description="User not found"),
+        },
+        security=[{'Bearer': []}],
+    )
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        submissions = PassageSubmission.objects.filter(user=user).order_by('-submission_date')
+        serializer = AdminSubmissionSerializer(submissions, many=True)
+        return Response(serializer.data)
+
+class AdminPassageView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Create a new passage with MCQ and written questions, including support for math terms (LaTeX) and shapes (file uploads).",
+        request_body=PassageSerializer,
+        responses={
+            201: PassageSerializer,
+            400: openapi.Response(description="Invalid input", examples={
+                'application/json': {
+                    'value': {'error': {'title': ['This field is required.']}}
+                }
+            })
+        },
+        security=[{'Bearer': []}],
+    )
+    def post(self, request):
+        serializer = PassageSerializer(data=request.data)
+        if serializer.is_valid():
+            passage = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AdminPassageDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a passage with its questions (including question_id) and answers (including answer_id).",
+        responses={
+            200: PassageSerializer,
+            404: openapi.Response(description="Passage not found")
+        },
+        security=[{'Bearer': []}],
+    )
+    def get(self, request, pk):
+        passage = get_object_or_404(Passage, pk=pk)
+        serializer = PassageSerializer(passage)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(
+        operation_description="Update a passage, its questions, answers, and time limit. Question and answer IDs are optional for existing items.",
+        request_body=PassageSerializer,
+        responses={
+            200: PassageSerializer,
+            400: openapi.Response(description="Invalid input"),
+            404: openapi.Response(description="Passage not found")
+        },
+        security=[{'Bearer': []}],
+    )
+    def put(self, request, pk):
+        passage = get_object_or_404(Passage, pk=pk)
+        serializer = PassageSerializer(passage, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AdminQuestionUploadView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Upload a single MCQ or written question to an existing passage, supporting math terms (LaTeX) and shapes (file uploads).",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['question_type', 'question_text', 'max_points', 'accepted_formats'],
+            properties={
+                'question_type': openapi.Schema(type=openapi.TYPE_STRING, enum=['mcq', 'short', 'long', 'math_short', 'math_long']),
+                'question_text': openapi.Schema(type=openapi.TYPE_STRING),
+                'question_file': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Base64-encoded file content or URL (supports PNG, JPEG, SVG; max 5MB); note: use multipart/form-data for direct file upload.'
+                ),
+                'question_format': openapi.Schema(type=openapi.TYPE_STRING, enum=['text', 'latex']),
+                'max_points': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'accepted_formats': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_STRING, enum=['text', 'latex', 'file'])
+                ),
+                'mcq_answers': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'answer_text': openapi.Schema(type=openapi.TYPE_STRING),
+                            'is_right': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                        }
+                    ),
+                    nullable=True
+                )
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Successfully created question",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    oneOf=[
+                        openapi.Schema(type=openapi.TYPE_OBJECT, ref='#/components/schemas/MCQQuestionSerializer'),
+                        openapi.Schema(type=openapi.TYPE_OBJECT, ref='#/components/schemas/WrittenQuestionSerializer')
+                    ]
+                )
+            ),
+            400: openapi.Response(description="Invalid input", examples={
+                'application/json': {
+                    'value': {'error': {'question_type': ['Invalid question type.']}}
+                }
+            }),
+            404: openapi.Response(description="Passage not found")
+        },
+        security=[{'Bearer': []}],
+    )
+    def post(self, request, pk):
+        passage = get_object_or_404(Passage, pk=pk)
+        question_type = request.data.get('question_type')
+        if question_type == 'mcq':
+            serializer = MCQQuestionSerializer(data=request.data)
+            if serializer.is_valid():
+                question = MCQQuestion.objects.create(passage=passage, question_text=serializer.validated_data['question_text'])
+                for answer_data in serializer.validated_data['mcq_answers']:
+                    MCQAnswer.objects.create(question=question, **answer_data)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            serializer = WrittenQuestionSerializer(data=request.data)
+            if serializer.is_valid():
+                question = WrittenQuestion.objects.create(passage=passage, **serializer.validated_data)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class StudentPassageView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve passage details for students, including MCQ and written questions, with file URLs for shapes.",
+        responses={
+            200: StudentPassageSerializer,
+            404: openapi.Response(description="Passage not found")
+        },
+    )
+    def get(self, request, pk):
+        passage = get_object_or_404(Passage, pk=pk)
+        serializer = StudentPassageSerializer(passage)
+        return Response(serializer.data)
+
+class CustomSubmissionView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Submit answers for a passage's MCQ and written questions, including math terms (LaTeX) and shapes (file uploads). Time taken must not exceed passage's time limit.",
+        request_body=SubmissionSerializer,
+        responses={
+            201: StudentSubmissionResultSerializer,
+            400: openapi.Response(description="Invalid submission or time limit exceeded"),
+            403: openapi.Response(description="Submission already exists"),
+            404: openapi.Response(description="Passage, question, or user not found")
+        },
+    )
+    def post(self, request, pk):
+        serializer = SubmissionSerializer(data=request.data, context={'request': request, 'view': self})
+        if serializer.is_valid():
+            passage = Passage.objects.get(id=pk)
+            user = User.objects.get(id=serializer.validated_data['user_id'])
+            if PassageSubmission.objects.filter(user=user, passage=passage).exists():
+                return Response({"error": "User has already submitted answers for this passage"}, status=status.HTTP_403_FORBIDDEN)
+
+            with transaction.atomic():
+                passage_submission = PassageSubmission.objects.create(
+                    passage=passage,
+                    user=user,
+                    time_taken=serializer.validated_data['time_taken']
+                )
+                written_passage_submission = WrittenPassageSubmission.objects.create(
+                    passage_submission=passage_submission
+                )
+
+                for mcq_sub in serializer.validated_data['submissions']:
+                    question = MCQQuestion.objects.get(id=mcq_sub['question_id'])
+                    answer = MCQAnswer.objects.get(id=mcq_sub['answer_id'])
+                    MCQSubmission.objects.create(
+                        passage_submission=passage_submission,
+                        question=question,
+                        selected_answer=answer
+                    )
+                    if answer.is_right:
+                        passage_submission.score += 1
+
+                for written_sub in serializer.validated_data['written_answers']:
+                    question = WrittenQuestion.objects.get(id=written_sub['question_id'])
+                    WrittenSubmission.objects.create(
+                        written_passage_submission=written_passage_submission,
+                        question=question,
+                        answer_text=written_sub['answer_text'],
+                        answer_file=written_sub.get('answer_file'),
+                        format=written_sub['format']
+                    )
+
+                passage_submission.save()
+
+            serializer = StudentSubmissionResultSerializer(passage_submission)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class GradeSubmissionView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Grade a written submission with a score, optional review, and teacher ID, assigning the grading teacher. No authentication required.",
+        request_body=GradeSubmissionSerializer,
+        responses={
+            200: WrittenResultSerializer,
+            400: openapi.Response(
+                description="Invalid input",
+                examples={
+                    'application/json': {
+                        'error': 'Submission already reviewed.'
+                    }
+                }
+            )
+        }
+    )
+    def post(self, request):
+        serializer = GradeSubmissionSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            submission = WrittenSubmission.objects.get(id=serializer.validated_data['submission_id'])
+            submission.score = serializer.validated_data['score']
+            submission.review = serializer.validated_data.get('review')
+            submission.reviewed = True
+            submission.graded_by = serializer.validated_data['teacher']
+            submission.save()
+
+            written_passage_submission = submission.written_passage_submission
+            written_passage_submission.written_score = sum(
+                sub.score or 0 for sub in written_passage_submission.written_submissions.all()
+            )
+            written_passage_submission.is_fully_reviewed = all(
+                sub.reviewed for sub in written_passage_submission.written_submissions.all()
+            )
+            written_passage_submission.save()
+
+            serializer = WrittenResultSerializer(submission)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AdminSubmissionView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve all submissions for a user, including MCQ and written scores.",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="ID of the user whose submissions to retrieve",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: AdminSubmissionSerializer(many=True),
+            400: openapi.Response(description="user_id is required")
+        },
+        security=[{'Bearer': []}],
+    )
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        submissions = PassageSubmission.objects.filter(user_id=user_id)
+        serializer = AdminSubmissionSerializer(submissions, many=True)
+        return Response(serializer.data)
+
+class AdminWrittenSubmissionView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve detailed written submissions for a user, including answers and grades.",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_QUERY,
+                description="ID of the user whose written submissions to retrieve",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: WrittenResultSerializer(many=True),
+            400: openapi.Response(description="user_id is required"),
+            404: openapi.Response(description="User not found")
+        },
+        security=[{'Bearer': []}],
+    )
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        submissions = WrittenSubmission.objects.filter(
+            written_passage_submission__passage_submission__user=user
+        )
+        serializer = WrittenResultSerializer(submissions, many=True)
+        return Response(serializer.data)
+
+class StudentSubmissionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Retrieve detailed results of a student's submission, including MCQ and written answers.",
+        responses={
+            200: StudentSubmissionResultSerializer,
+            403: openapi.Response(description="Permission denied"),
+            404: openapi.Response(description="Submission not found")
+        },
+        security=[{'Bearer': []}],
+    )
+    def get(self, request, pk):
+        submission = get_object_or_404(PassageSubmission, pk=pk)
+        if submission.user != request.user:
+            return Response(
+                {"error": "You do not have permission to view this submission."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = StudentSubmissionResultSerializer(submission)
+        return Response(serializer.data)

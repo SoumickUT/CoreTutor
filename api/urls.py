@@ -4,6 +4,8 @@ from api import admin
 
 from rest_framework_simplejwt.views import TokenRefreshView
 
+
+
 urlpatterns = [
     # Authentication Endpoints
 
@@ -183,7 +185,29 @@ urlpatterns = [
     
     
     
+    # PassageViewSet actions as separate paths
+    path('passages/', api_views.PassageViewSet.as_view({'get': 'list', 'post': 'create'}), name='passage-list'),
+    path('passages/<int:pk>/', api_views.PassageViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='passage-detail'),
 
+    # Student Views
+    path('student/passages/', api_views.StudentPassageListView.as_view(), name='student-passage-list'),
+    path('student/passages/<int:pk>/', api_views.StudentPassageDetailView.as_view(), name='student-passage-detail'),
+
+    # Submission Views
+    path('passages/<int:pk>/submit/', api_views.SubmissionView.as_view(), name='submit'),
+    path('passages/<int:pk>/submit/custom/', api_views.CustomSubmissionView.as_view(), name='custom-submit'),
+    path('submissions/', api_views.PassageSubmissionView.as_view(), name='passage-submission'),
+    path('submissions/<int:pk>/', api_views.StudentSubmissionView.as_view(), name='student-submission'),
+
+    # Admin Views
+    path('admin/passages/', api_views.AdminPassageView.as_view(), name='admin-passage-create'),
+    path('admin/passages/<int:pk>/', api_views.AdminPassageDetailView.as_view(), name='admin-passage-detail'),
+    path('admin/passages/<int:pk>/questions/', api_views.AdminQuestionUploadView.as_view(), name='admin-question-upload'),
+    
+    # Admin Submission Grading & Management
+    path('admin/submissions/grade/', api_views.GradeSubmissionView.as_view(), name='grade-submission'),
+    path('admin/submissions/', api_views.AdminSubmissionView.as_view(), name='admin-submissions'),
+    path('admin/submissions/written/', api_views.AdminWrittenSubmissionView.as_view(), name='admin-written-submissions'),
     
     
     # Nitification  Routes
